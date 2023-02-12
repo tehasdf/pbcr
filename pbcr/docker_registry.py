@@ -158,7 +158,9 @@ def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
     manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
     image_config = _get_image_config(storage, manifest, token)
     layers = _get_image_layers(storage, manifest, token)
+
     return Image(
+        registry='docker.io',
         manifest=manifest,
         config=image_config,
         layers=layers,

@@ -24,6 +24,13 @@ def main():
         dest='container_name',
         help='Container name',
     )
+    run_parser.add_argument(
+        '-d',
+        '--daemon',
+        action='store_true',
+        dest='daemon',
+    )
+
     kwargs = vars(parser.parse_args())
 
     command = kwargs.pop('command', None)

@@ -82,9 +82,21 @@ class ImageLayer:
 
 @dataclass
 class Image:
+    registry: str
     manifest: Manifest
     config: ImageConfig
     layers: list[ImageLayer]
+
+
+@dataclass
+class Container:
+    id: str
+    pid: int | None
+    image_registry: str
+    image_name: str
+
+    def asdict(self):
+        return asdict(self)
 
 
 class Storage(typing.Protocol):  # pragma: no cover
@@ -124,4 +136,13 @@ class Storage(typing.Protocol):  # pragma: no cover
     def make_container_chroot(
         self, container_id: str, image: Image,
     ) -> pathlib.Path:
+        ...
+
+    def get_container(self, container_id: str) -> Container | None:
+        ...
+
+    def store_container(self, container: Container):
+        ...
+
+    def remove_container(self, container: Container):
         ...

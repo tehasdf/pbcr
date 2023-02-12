@@ -1,5 +1,6 @@
 import json
 import pathlib
+import shutil
 import tarfile
 
 from pbcr.types import (
@@ -10,6 +11,7 @@ from pbcr.types import (
     Digest,
     ImageConfig,
     ImageLayer,
+    Container,
 )
 
 
@@ -43,13 +45,15 @@ class FileStorage:
 
     def store_pull_token(self, registry: str, repo: str, token: PullToken):
         tokens_file = self._base / 'pull_tokens.json'
-        with tokens_file.open('w+') as f:
+        tokens_file.touch()
+        with tokens_file.open('r+') as f:
             try:
                 tokens = json.load(f)
             except ValueError:
                 tokens = {}
             tokens.setdefault(registry, {})[repo] = token.asdict()
             f.seek(0)
+            f.truncate()
             json.dump(tokens, f, indent=4)
 
     def get_manifest(
@@ -144,6 +148,58 @@ class FileStorage:
             with tarfile.open(layer.path) as tf:
                 tf.extractall(container_chroot)
         return container_chroot
+
+    def get_container(self, container_id: str) -> Container | None:
+        registry_path = (
+            self._base /
+            'containers.json'
+        )
+        with registry_path.open() as f:
+            try:
+                containers = json.load(f)
+            except (IOError, ValueError):
+                containers = {}
+        if container_id not in containers:
+            return None
+        return Container(**containers[container_id])
+
+    def store_container(self, container: Container):
+        registry_path = (
+            self._base /
+            'containers.json'
+        )
+        registry_path.touch()
+        with registry_path.open('r+') as f:
+            try:
+                containers = json.load(f)
+            except (IOError, ValueError):
+                containers = {}
+            containers[container.id] = container.asdict()
+            f.seek(0)
+            f.truncate()
+            json.dump(containers, f, indent=4)
+
+    def remove_container(self, container: Container):
+        registry_path = (
+            self._base /
+            'containers.json'
+        )
+        registry_path.touch()
+        with registry_path.open('r+') as f:
+            try:
+                containers = json.load(f)
+                del containers[container.id]
+            except (IOError, ValueError, KeyError) as e:
+                print('remove fail', e)
+                return
+            f.seek(0)
+            f.truncate()
+            json.dump(containers, f, indent=4)
+
+        shutil.rmtree(
+            self._base / 'containers' / container.id,
+            ignore_errors=True,
+        )
 
 
 def make_storage(

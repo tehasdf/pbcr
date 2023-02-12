@@ -1,5 +1,6 @@
 import json
 import pathlib
+import tarfile
 
 from pbcr.types import (
     Image,
@@ -128,6 +129,21 @@ class FileStorage:
         with layer_file.open('wb') as f:
             f.write(data)
         return layer_file
+
+    def make_container_chroot(
+        self, container_id: str, image: Image,
+    ) -> pathlib.Path:
+        container_chroot = (
+            self._base /
+            'containers' /
+            container_id
+        )
+        if not container_chroot.is_dir():
+            container_chroot.mkdir(parents=True)
+        for layer in image.layers:
+            with tarfile.open(layer.path) as tf:
+                tf.extractall(container_chroot)
+        return container_chroot
 
 
 def make_storage(

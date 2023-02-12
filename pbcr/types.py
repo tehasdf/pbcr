@@ -120,3 +120,8 @@ class Storage(typing.Protocol):  # pragma: no cover
         self, manifest: Manifest, digest: Digest, data: bytes,
     ):
         ...
+
+    def make_container_chroot(
+        self, container_id: str, image: Image,
+    ) -> pathlib.Path:
+        ...

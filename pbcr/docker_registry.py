@@ -1,52 +1,129 @@
-import json
-from datetime import datetime
-
 import requests
 
-from pbcr.types import Storage, PullToken
+from pbcr.types import (
+    Storage,
+    PullToken,
+    Manifest,
+    Digest,
+    MediaType,
+    ImageConfig,
+)
+
 
 REGISTRY_BASE = 'https://registry-1.docker.io'
 
 
-def _get_pull_token(repo: str) -> PullToken:
+def _get_pull_token(storage: Storage, repo: str) -> PullToken:
+    if token := storage.get_pull_token(registry='docker.io', repo=repo):
+        return token
+
     resp = requests.get(
         'https://auth.docker.io/token?service=registry.docker.io&'
         f'scope=repository:{repo}:pull',
     )
     token_data = resp.json()
     token_data['issued_at'] = token_data['issued_at'][:-4]
-    return PullToken.fromdict(token_data)
+    token = PullToken.fromdict(token_data)
+
+    storage.store_pull_token(registry='docker.io', repo=repo, token=token)
+    return token
+
+
+def _find_image_digest(
+    repo: str,
+    tag: str,
+    token: PullToken,
+    architecture: str='amd64',
+) -> tuple[Digest, MediaType]:
+    index_response = requests.get(
+        f'{REGISTRY_BASE}/v2/{repo}/manifests/{tag}',
+        headers={
+            'Accept': ','.join([
+                'application/vnd.docker.distribution.manifest.list.v2+json',
+                'application/vnd.oci.image.index.v1+json',
+            ]),
+            'Authorization': f'Bearer {token}',
+        }
+    )
+    index_data = index_response.json()
+    for manifest_spec in index_data['manifests']:
+        try:
+            manifest_arch = manifest_spec['platform']['architecture']
+        except KeyError:
+            continue
+        if manifest_arch == architecture:
+            break
+    else:
+        raise ValueError(f'manifest for {architecture} not found')
+
+    return manifest_spec['digest'], manifest_spec['mediaType']
 
 
 def _get_image_manifest(
     storage: Storage,
     repo: str,
-    tag: str,
-    token: str,
-    architecture: str='amd64'
-):
-    url = f'{REGISTRY_BASE}/v2/{repo}/manifests/{tag}'
-    resp = requests.get(
-        url,
+    digest: Digest,
+    mediatype: MediaType,
+    token: PullToken,
+) -> Manifest:
+    if manifest := storage.get_manifest(
+        registry='docker.io', repo=repo, digest=digest,
+    ):
+        return manifest
+    manifest_response = requests.get(
+        url = f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
         headers={
-            'Accept': 'application/vnd.oci.image.index.v1+json',
-            # 'Accept': 'application/vnd.oci.image.manifest.v1+json',
+            'Accept': mediatype,
             'Authorization': f'Bearer {token}',
         }
     )
-    try:
-        return resp.json()
-    except ValueError:
-        raise ValueError(f'unexpected response from {url}: {resp.content!r}')
+    manifest_data = manifest_response.json()
+    manifest = Manifest(
+        registry='docker.io',
+        name=repo,
+        digest=digest,
+        config=(
+            manifest_data['config']['digest'],
+            manifest_data['config']['mediaType'],
+        ),
+        layers=[
+            (layer['digest'], layer['mediaType'])
+            for layer in manifest_data['layers']
+        ],
+    )
+    storage.store_manifest(manifest=manifest)
+    return manifest
+
+
+def _get_image_config(
+    storage: Storage,
+    manifest: Manifest,
+    token: PullToken,
+) -> ImageConfig:
+    if image_config := storage.get_image_config(manifest):
+        return image_config
+
+    config_resp = requests.get(
+        f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{manifest.config[0]}',
+        headers={
+            'Accept': manifest.config[1],
+            'Authorization': f'Bearer {token}',
+        }
+    )
+
+    config_data = config_resp.json()
+    image_config = ImageConfig(**config_data)
+    storage.store_image_config(manifest, image_config)
+    return image_config
 
 
 def pull_image_from_docker(storage: Storage, image_name: str):
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
-    token = storage.get_pull_token(registry='docker.io', repo=repo)
-    if not token:
-        token = _get_pull_token(repo)
-        storage.store_pull_token(registry='docker.io', repo=repo, token=token)
+    token = _get_pull_token(storage, repo)
 
-    manifest = _get_image_manifest(storage, repo, reference, token.token)
-    print('manifest', json.dumps(manifest, indent=4))
+    digest, mediatype = _find_image_digest(repo, reference, token)
+
+    manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
+    cfg = _get_image_config(storage, manifest, token)
+    print('cfg', cfg)

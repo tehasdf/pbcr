@@ -1,7 +1,7 @@
 import json
 import pathlib
 
-from pbcr.types import Image, Storage, PullToken
+from pbcr.types import Image, Storage, PullToken, Manifest, Digest, ImageConfig
 
 
 class FileStorage:
@@ -43,6 +43,51 @@ class FileStorage:
             f.seek(0)
             json.dump(tokens, f, indent=4)
 
+    def get_manifest(
+        self, registry: str, repo: str, digest: Digest,
+    ) -> Manifest | None:
+        manifest_file = self._base / registry / repo / 'manifest.json'
+        try:
+            with manifest_file.open() as f:
+                return Manifest(**json.load(f))
+        except (ValueError, IOError):
+            return None
+
+    def store_manifest(self, manifest: Manifest):
+        manifest_file = (
+            self._base /
+            manifest.registry /
+            manifest.name /
+            'manifest.json'
+        )
+        if not manifest_file.parent.is_dir():
+            manifest_file.parent.mkdir(parents=True)
+        with manifest_file.open('w') as f:
+            json.dump(manifest.asdict(), f, indent=4)
+
+    def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
+        config_file = (
+            self._base /
+            manifest.registry /
+            manifest.name /
+            'config.json'
+        )
+        try:
+            with config_file.open() as f:
+                return ImageConfig(**json.load(f))
+        except (ValueError, IOError):
+            return None
+
+    def store_image_config(self, manifest: Manifest, config: ImageConfig):
+        config_file = (
+            self._base /
+            manifest.registry /
+            manifest.name /
+            'config.json'
+        )
+        with config_file.open('w') as f:
+            json.dump(config.asdict(), f, indent=4)
+
 
 def make_storage(
     base_path: pathlib.Path | str=pathlib.Path('~/.pbcr'),
@@ -50,5 +95,5 @@ def make_storage(
 ) -> Storage:
     base_path = pathlib.Path(base_path).expanduser().absolute()
     if not base_path.is_dir():
-        base_path.mkdir()
+        base_path.mkdir(parents=True)
     return FileStorage(base=base_path)

@@ -11,3 +11,14 @@ py-modules = ["pbcr"]
 
 [project.entry-points.console_scripts]
 pbcr = "pbcr.main:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+    "flake8",
+    "mypy",
+]
+
+[tool.pytest.ini_options]
+addopts = "-svx --cov --cov-report term-missing"

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pbcr"
+version = "0.1.0"
+
+[tools.setuptools]
+py-modules = ["pbcr"]
+
+[project.entry-points.console_scripts]
+pbcr = "pbcr.main:main"

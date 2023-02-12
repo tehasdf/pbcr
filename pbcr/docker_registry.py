@@ -153,7 +153,11 @@ def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
     reference = reference or 'latest'
     token = _get_pull_token(storage, repo)
 
-    digest, mediatype = _find_image_digest(repo, reference, token)
+    if reference.startswith('sha256:'):
+        digest = reference
+        mediatype = None
+    else:
+        digest, mediatype = _find_image_digest(repo, reference, token)
 
     manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
     image_config = _get_image_config(storage, manifest, token)

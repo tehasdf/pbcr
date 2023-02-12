@@ -30,6 +30,12 @@ def main():
         action='store_true',
         dest='daemon',
     )
+    run_parser.add_argument(
+        '-c',
+        '--copy',
+        dest='copies',
+        nargs='*',
+    )
 
     kwargs = vars(parser.parse_args())
 

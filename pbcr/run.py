@@ -1,5 +1,6 @@
 import ctypes
 import os
+import shutil
 import uuid
 
 from pbcr.docker_registry import pull_image_from_docker
@@ -17,8 +18,9 @@ CLONE_NEWCGROUP = 0x02000000
 def run_command(
     storage: Storage,
     image_name: str,
-    container_name: str | None,
+    container_name: str | None=None,
     daemon: bool=False,
+    copies: list[str] | None=None,
 ):
     if not container_name:
         container_name = str(uuid.uuid4())
@@ -36,6 +38,11 @@ def run_command(
     )
     storage.store_container(container)
     container_chroot = storage.make_container_chroot(container_name, img)
+
+    for copy_spec in copies:
+        copy_from, _, copy_to = copy_spec.partition(':')
+        copy_to = container_chroot / copy_to.lstrip('/')
+        shutil.copy(copy_from, copy_to)
 
     entrypoint = img.config.config['Entrypoint']
     command = img.config.config['Cmd']

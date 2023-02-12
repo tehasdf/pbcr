@@ -12,9 +12,10 @@ def list_images_command(storage: Storage, **kwargs):
 def pull_image(storage: Storage, image_name: str):
     if image_name.startswith('docker.io/'):
         image_name = image_name.replace('docker.io/', '', 1)
-        pull_image_from_docker(storage, image_name)
+        img = pull_image_from_docker(storage, image_name)
     else:
         raise ValueError(f'unknown image reference: {image_name}')
+    print(f'Fetched image {img.manifest.name} with {len(img.layers)} layers')
 
 
 def pull_image_command(storage: Storage, image_names: list[str], **kwargs):

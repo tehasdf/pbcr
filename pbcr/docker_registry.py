@@ -7,6 +7,8 @@ from pbcr.types import (
     Digest,
     MediaType,
     ImageConfig,
+    ImageLayer,
+    Image,
 )
 
 
@@ -95,6 +97,35 @@ def _get_image_manifest(
     return manifest
 
 
+def _get_image_layers(
+    storage: Storage,
+    manifest: Manifest,
+    token: PullToken,
+) -> list[ImageLayer]:
+    layers = []
+    for layer_digest, layer_mediatype in manifest.layers:
+        layer = storage.get_image_layer(manifest, layer_digest)
+        if not layer:
+            layer_response = requests.get(
+                f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{layer_digest}',
+                headers={
+                    'Accept': layer_mediatype,
+                    'Authorization': f'Bearer {token}',
+                }
+            )
+            layer_path = storage.store_image_layer(
+                manifest,
+                layer_digest,
+                layer_response.content,
+            )
+            layer = ImageLayer(
+                digest=layer_digest,
+                path=layer_path,
+            )
+        layers.append(layer)
+    return layers
+
+
 def _get_image_config(
     storage: Storage,
     manifest: Manifest,
@@ -117,7 +148,7 @@ def _get_image_config(
     return image_config
 
 
-def pull_image_from_docker(storage: Storage, image_name: str):
+def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
     token = _get_pull_token(storage, repo)
@@ -125,5 +156,10 @@ def pull_image_from_docker(storage: Storage, image_name: str):
     digest, mediatype = _find_image_digest(repo, reference, token)
 
     manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
-    cfg = _get_image_config(storage, manifest, token)
-    print('cfg', cfg)
+    image_config = _get_image_config(storage, manifest, token)
+    layers = _get_image_layers(storage, manifest, token)
+    return Image(
+        manifest=manifest,
+        config=image_config,
+        layers=layers,
+    )

@@ -1,7 +1,15 @@
 import json
 import pathlib
 
-from pbcr.types import Image, Storage, PullToken, Manifest, Digest, ImageConfig
+from pbcr.types import (
+    Image,
+    Storage,
+    PullToken,
+    Manifest,
+    Digest,
+    ImageConfig,
+    ImageLayer,
+)
 
 
 class FileStorage:
@@ -87,6 +95,39 @@ class FileStorage:
         )
         with config_file.open('w') as f:
             json.dump(config.asdict(), f, indent=4)
+
+    def get_image_layer(
+        self, manifest: Manifest, digest: Digest,
+    ) -> ImageLayer | None:
+        layer_file = (
+            self._base /
+            manifest.registry /
+            manifest.name /
+            'layers' /
+            str(digest)
+        )
+        if layer_file.exists():
+            return ImageLayer(
+                digest=digest,
+                path=layer_file,
+            )
+        return None
+
+    def store_image_layer(
+        self, manifest: Manifest, digest: Digest, data: bytes,
+    ) -> pathlib.Path:
+        layer_file = (
+            self._base /
+            manifest.registry /
+            manifest.name /
+            'layers' /
+            str(digest)
+        )
+        if not layer_file.parent.is_dir():
+            layer_file.parent.mkdir(parents=True)
+        with layer_file.open('wb') as f:
+            f.write(data)
+        return layer_file
 
 
 def make_storage(

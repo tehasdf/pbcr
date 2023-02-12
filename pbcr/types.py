@@ -1,3 +1,4 @@
+import pathlib
 import typing
 from datetime import datetime, timedelta
 
@@ -6,11 +7,6 @@ from dataclasses import dataclass, asdict, fields
 
 Digest = typing.NewType('Digest', str)
 MediaType = typing.NewType('MediaType', str)
-
-
-@dataclass
-class Image:
-    pass
 
 
 @dataclass
@@ -78,6 +74,18 @@ class ImageConfig:
     def asdict(self):
         return asdict(self)
 
+@dataclass
+class ImageLayer:
+    digest: Digest
+    path: pathlib.Path
+
+
+@dataclass
+class Image:
+    manifest: Manifest
+    config: ImageConfig
+    layers: list[ImageLayer]
+
 
 class Storage(typing.Protocol):  # pragma: no cover
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:
@@ -101,4 +109,14 @@ class Storage(typing.Protocol):  # pragma: no cover
         ...
 
     def store_image_config(self, manifest: Manifest, config: ImageConfig):
+        ...
+
+    def get_image_layer(
+        self, manifest: Manifest, digest: Digest,
+    ) -> ImageLayer | None:
+        ...
+
+    def store_image_layer(
+        self, manifest: Manifest, digest: Digest, data: bytes,
+    ):
         ...

@@ -6,6 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "pbcr"
 version = "0.1.0"
 
+dependencies = [
+    "requests",
+]
+
 [tools.setuptools]
 py-modules = ["pbcr"]
 

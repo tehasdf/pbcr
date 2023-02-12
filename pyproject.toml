@@ -16,7 +16,7 @@ pbcr = "pbcr.main:main"
 test = [
     "pytest",
     "pytest-cov",
-    "flake8",
+    "pyflakes",
     "mypy",
 ]
 

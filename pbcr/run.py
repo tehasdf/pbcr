@@ -179,9 +179,7 @@ def run_command(
         signal.signal(signal.SIGUSR1, signal.SIG_DFL)
 
         if not daemon:
-            signal.signal(signal.SIGINT, lambda sig, frame: evt.set())
-            evt.wait()
-            evt.clear()
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
 
             _, retcode = os.waitpid(forkpid, 0)
             storage.remove_container(container)

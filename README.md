@@ -4,6 +4,7 @@ This allows running container images fetched from OCI registries (currently: onl
 
 To use this, install the package using pip, and run:
 ```bash
+pbcr pull docker.io/library/hello-world
 pbcr run docker.io/library/hello-world -n hello-world-container
 ````
 

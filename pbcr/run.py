@@ -156,6 +156,7 @@ def run_command(
 
     evt = threading.Event()
     signal.signal(signal.SIGUSR1, lambda sig, frame: evt.set())
+
     forkpid = os.fork()
     if forkpid == 0:
         libc.unshare(CLONE_NEWUSER | CLONE_NEWCGROUP | CLONE_NEWNS)
@@ -178,7 +179,15 @@ def run_command(
         subprocess.call(['/usr/bin/newgidmap', str(forkpid)] + newgidmap_args)
 
         os.kill(forkpid, signal.SIGUSR1)
+        signal.signal(signal.SIGUSR1, signal.SIG_DFL)
 
         if not daemon:
-            os.waitpid(forkpid, 0)
+            signal.signal(signal.SIGINT, lambda sig, frame: evt.set())
+            evt.wait()
+            evt.clear()
+
+            _, retcode = os.waitpid(forkpid, 0)
             storage.remove_container(container)
+            # for some reason, I can't remove in-process?
+            subprocess.call(['/bin/rm', '-rf', str(container_dir)])
+            sys.exit(retcode)

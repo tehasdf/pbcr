@@ -34,7 +34,7 @@ def _get_container_spec(mnt_cmd, container_dir):
         os.kill(parentpid, signal.SIGUSR1)
         evt.wait()
         evt.clear()
-        os.system(mnt_cmd)
+        subprocess.call(mnt_cmd)
 
         container = {}
         try:
@@ -150,11 +150,11 @@ def run_command(
 
     upper = container_upperdir
     workdir = container_workdir
-    mnt_cmd = (
-        'mount -t overlay overlay '
-        f'-o lowerdir={lowers},upperdir={upper},workdir={workdir} '
+    mnt_cmd = [
+        '/bin/mount', '-t', 'overlay', 'overlay',
+        '-o', f'lowerdir={lowers},upperdir={upper},workdir={workdir}',
         f'{container_chroot}'
-    )
+    ]
 
     newuidmap_args, newgidmap_args = _get_container_spec(mnt_cmd, container_dir)
 
@@ -168,7 +168,7 @@ def run_command(
 
         evt.wait()
         evt.clear()
-        os.system(mnt_cmd)
+        subprocess.call(mnt_cmd)
 
         os.chroot(container_chroot)
         os.execv(entrypoint[0], entrypoint + command)

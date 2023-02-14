@@ -1,3 +1,4 @@
+import io
 import json
 import pathlib
 import shutil
@@ -109,7 +110,7 @@ class FileStorage:
             manifest.registry /
             manifest.name /
             'layers' /
-            str(digest)
+            str(digest).replace('sha256:', '')
         )
         if layer_file.exists():
             return ImageLayer(
@@ -121,20 +122,21 @@ class FileStorage:
     def store_image_layer(
         self, manifest: Manifest, digest: Digest, data: bytes,
     ) -> pathlib.Path:
-        layer_file = (
+        layer_dir = (
             self._base /
             manifest.registry /
             manifest.name /
             'layers' /
-            str(digest)
+            str(digest).replace('sha256:', '')
         )
-        if not layer_file.parent.is_dir():
-            layer_file.parent.mkdir(parents=True)
-        with layer_file.open('wb') as f:
-            f.write(data)
-        return layer_file
+        if not layer_dir.is_dir():
+            layer_dir.mkdir(parents=True)
+        data_f = io.BytesIO(data)
+        with tarfile.open(fileobj=data_f) as tf:
+            tf.extractall(layer_dir)
+        return layer_dir
 
-    def make_container_chroot(
+    def make_container_dir(
         self, container_id: str, image: Image,
     ) -> pathlib.Path:
         container_chroot = (
@@ -144,9 +146,6 @@ class FileStorage:
         )
         if not container_chroot.is_dir():
             container_chroot.mkdir(parents=True)
-        for layer in image.layers:
-            with tarfile.open(layer.path) as tf:
-                tf.extractall(container_chroot)
         return container_chroot
 
     def get_container(self, container_id: str) -> Container | None:
@@ -190,7 +189,6 @@ class FileStorage:
                 containers = json.load(f)
                 del containers[container.id]
             except (IOError, ValueError, KeyError) as e:
-                print('remove fail', e)
                 return
             f.seek(0)
             f.truncate()

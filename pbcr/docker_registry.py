@@ -66,12 +66,14 @@ def _get_image_manifest(
     repo: str,
     digest: Digest,
     mediatype: MediaType,
-    token: PullToken,
+    token: PullToken | None,
 ) -> Manifest:
     if manifest := storage.get_manifest(
         registry='docker.io', repo=repo, digest=digest,
     ):
         return manifest
+    if token is None:
+        raise RuntimeError('need token to fetch manifest')
     manifest_response = requests.get(
         url = f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
         headers={
@@ -106,6 +108,9 @@ def _get_image_layers(
     for layer_digest, layer_mediatype in manifest.layers:
         layer = storage.get_image_layer(manifest, layer_digest)
         if not layer:
+            if token is None:
+                raise RuntimeError('need token to fetch layers')
+
             layer_response = requests.get(
                 f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{layer_digest}',
                 headers={
@@ -129,11 +134,12 @@ def _get_image_layers(
 def _get_image_config(
     storage: Storage,
     manifest: Manifest,
-    token: PullToken,
+    token: PullToken | None,
 ) -> ImageConfig:
     if image_config := storage.get_image_config(manifest):
         return image_config
-
+    if token is None:
+        raise RuntimeError('need token to fetch config')
     config_resp = requests.get(
         f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{manifest.config[0]}',
         headers={
@@ -162,6 +168,21 @@ def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
     manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
     image_config = _get_image_config(storage, manifest, token)
     layers = _get_image_layers(storage, manifest, token)
+
+    return Image(
+        registry='docker.io',
+        manifest=manifest,
+        config=image_config,
+        layers=layers,
+    )
+
+def load_docker_image(storage: Storage, image_name: str) -> Image:
+    repo, _, reference = image_name.partition(':')
+    reference = reference or 'latest'
+
+    manifest = _get_image_manifest(storage, repo, '', '', None)
+    image_config = _get_image_config(storage, manifest, None)
+    layers = _get_image_layers(storage, manifest, None)
 
     return Image(
         registry='docker.io',

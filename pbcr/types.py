@@ -133,7 +133,7 @@ class Storage(typing.Protocol):  # pragma: no cover
     ):
         ...
 
-    def make_container_chroot(
+    def make_container_dir(
         self, container_id: str, image: Image,
     ) -> pathlib.Path:
         ...

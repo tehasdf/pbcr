@@ -31,9 +31,9 @@ def main():
         dest='daemon',
     )
     run_parser.add_argument(
-        '-c',
-        '--copy',
-        dest='copies',
+        '-v',
+        '--volume',
+        dest='volumes',
         nargs='*',
     )
 

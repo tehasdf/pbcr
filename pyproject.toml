@@ -20,7 +20,7 @@ pbcr = "pbcr.main:main"
 test = [
     "pytest",
     "pytest-cov",
-    "pyflakes",
+    "pylint",
     "mypy",
 ]
 

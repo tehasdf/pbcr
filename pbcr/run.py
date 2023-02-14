@@ -78,13 +78,18 @@ def _get_container_spec(mnt_cmd, container_dir):
         with (container_dir / 'container.json').open() as f:
             container_data = json.load(f)
 
-        min_uid = min(int(u) for u in container_data['uids'] if u != '0')
-        min_gid = min(int(u) for u in container_data['gids'] if u != '0')
 
-        max_uid = max(int(u) for u in container_data['uids'] if u != '0')
-        max_gid = max(int(u) for u in container_data['gids'] if u != '0')
-        newuidmap_args += [str(min_uid), '100000', str(max_uid - min_uid + 1)]
-        newgidmap_args += [str(min_gid), '100000', str(max_gid - min_gid + 1)]
+        if set(container_data['uids']) > {'0'}:
+            min_uid = min(int(u) for u in container_data['uids'] if u != '0')
+            max_uid = max(int(u) for u in container_data['uids'] if u != '0')
+            newuidmap_args += [
+                str(min_uid), '100000', str(max_uid - min_uid + 1)]
+
+        if set(container_data['gids']) > {'0'}:
+            min_gid = min(int(u) for u in container_data['gids'] if u != '0')
+            max_gid = max(int(u) for u in container_data['gids'] if u != '0')
+            newgidmap_args += [
+                str(min_gid), '100000', str(max_gid - min_gid + 1)]
 
         signal.signal(signal.SIGUSR1, signal.SIG_DFL)
         return newuidmap_args, newgidmap_args
@@ -119,13 +124,15 @@ def run_command(
     container_chroot = container_dir / 'chroot'
     container_workdir = container_dir / 'workdir'
     container_upperdir = container_dir / 'upper'
-    container_volumes = container_dir / 'volumes'
     container_chroot.mkdir(exist_ok=True)
     container_upperdir.mkdir(exist_ok=True)
     container_workdir.mkdir(exist_ok=True)
-    container_workdir.mkdir(exist_ok=True)
+
+    lowers =  ':'.join(str(ll.path) for ll in reversed(img.layers))
 
     if volumes:
+        container_volumes = container_dir / 'volumes'
+        container_volumes.mkdir(exist_ok=True)
         for volume in volumes:
             volume_source, _, volume_target = volume.partition(':')
             volume_target = volume_target.lstrip('/')
@@ -135,12 +142,12 @@ def run_command(
             if target.exists():
                 os.unlink(target)
             os.link(volume_source, target)
+        lowers = f'{container_volumes}:{lowers}'
 
     if not entrypoint:
         entrypoint = [command[0]]
     parentpid = os.getpid()
 
-    lowers = str(container_volumes) + ':' + ':'.join(str(ll.path) for ll in reversed(img.layers))
     upper = container_upperdir
     workdir = container_workdir
     mnt_cmd = (

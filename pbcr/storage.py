@@ -58,7 +58,7 @@ class FileStorage:
             json.dump(tokens, f, indent=4)
 
     def get_manifest(
-        self, registry: str, repo: str, digest: Digest,
+        self, registry: str, repo: str
     ) -> Manifest | None:
         manifest_file = self._base / registry / repo / 'manifest.json'
         try:
@@ -188,7 +188,7 @@ class FileStorage:
             try:
                 containers = json.load(f)
                 del containers[container.id]
-            except (IOError, ValueError, KeyError) as e:
+            except (IOError, ValueError, KeyError):
                 return
             f.seek(0)
             f.truncate()

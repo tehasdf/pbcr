@@ -1,15 +1,13 @@
 import ctypes
 import json
 import os
-import shutil
 import sys
 import uuid
-import time
 import subprocess
 import signal
 import threading
 
-from pbcr.docker_registry import pull_image_from_docker, load_docker_image
+from pbcr.docker_registry import load_docker_image
 from pbcr.types import Storage, Container
 
 libc = ctypes.CDLL('libc.so.6')
@@ -36,7 +34,6 @@ def _get_container_spec(mnt_cmd, container_dir):
         os.kill(parentpid, signal.SIGUSR1)
         evt.wait()
         evt.clear()
-        mnt = libc.mount
         os.system(mnt_cmd)
 
         container = {}

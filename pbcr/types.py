@@ -110,7 +110,7 @@ class Storage(typing.Protocol):  # pragma: no cover
         ...
 
     def get_manifest(
-        self, registry: str, repo: str, digest: Digest,
+        self, registry: str, repo: str,
     ) -> Manifest | None:
         ...
 

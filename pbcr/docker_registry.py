@@ -64,16 +64,20 @@ def _find_image_digest(
 def _get_image_manifest(
     storage: Storage,
     repo: str,
-    digest: Digest,
-    mediatype: MediaType,
-    token: PullToken | None,
+    digest: Digest | None=None,
+    mediatype: MediaType | None=None,
+    token: PullToken | None=None,
 ) -> Manifest:
     if manifest := storage.get_manifest(
-        registry='docker.io', repo=repo, digest=digest,
+        registry='docker.io', repo=repo,
     ):
         return manifest
     if token is None:
         raise RuntimeError('need token to fetch manifest')
+    if mediatype is None:
+        raise RuntimeError('need mediatype to fetch manifest')
+    if digest is None:
+        raise RuntimeError('need digest to fetch manifest')
     manifest_response = requests.get(
         url = f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
         headers={
@@ -102,7 +106,7 @@ def _get_image_manifest(
 def _get_image_layers(
     storage: Storage,
     manifest: Manifest,
-    token: PullToken,
+    token: PullToken | None=None,
 ) -> list[ImageLayer]:
     layers = []
     for layer_digest, layer_mediatype in manifest.layers:
@@ -160,7 +164,7 @@ def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
     token = _get_pull_token(storage, repo)
 
     if reference.startswith('sha256:'):
-        digest = reference
+        digest = Digest(reference)
         mediatype = None
     else:
         digest, mediatype = _find_image_digest(repo, reference, token)
@@ -180,9 +184,9 @@ def load_docker_image(storage: Storage, image_name: str) -> Image:
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
 
-    manifest = _get_image_manifest(storage, repo, '', '', None)
+    manifest = _get_image_manifest(storage, repo, None, None, None)
     image_config = _get_image_config(storage, manifest, None)
-    layers = _get_image_layers(storage, manifest, None)
+    layers = _get_image_layers(storage, manifest)
 
     return Image(
         registry='docker.io',

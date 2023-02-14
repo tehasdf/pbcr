@@ -17,6 +17,5 @@ This is just an experimental toy project, I made to learn about container runtim
 ## Missing bits
 
 Currently, pbcr doesn't implement:
-- mounting (only copying)
-- any kind of layered FS (always untars the image layers)
 - network namespaces
+- nice UX :)

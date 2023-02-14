@@ -4,6 +4,7 @@ import ctypes
 import json
 import os
 import pathlib
+import pwd
 import signal
 import subprocess
 import sys
@@ -24,6 +25,28 @@ CLONE_NEWCGROUP = 0x02000000
 
 
 class _UIDMapper:
+    @classmethod
+    def for_current_user(cls):
+        """Create a _UIDMapper initialized for the current user."""
+        uid = os.getuid()
+        username = pwd.getpwuid(uid).pw_name
+        subuid = cls._parse_sub_file(pathlib.Path('/etc/subuid'), username)
+        subgid = cls._parse_sub_file(pathlib.Path('/etc/subgid'), username)
+        return cls(subuid, subgid, str(uid))
+
+    @classmethod
+    def _parse_sub_file(
+        cls,
+        source_path: pathlib.Path,
+        username: str,
+    ) -> str:
+        with source_path.open() as source_file:
+            for line in source_file:
+                parts = line.split(':')
+                if parts[0] == username:
+                    return parts[1]
+        raise ValueError(username)
+
     def __init__(self, subuid: str, subgid: str, root_map: str):
         self._subuid = subuid
         self._subgid = subgid
@@ -209,7 +232,7 @@ def run_command(
         container_name = str(uuid.uuid4())
     img = _choose_image(storage, image_name)
 
-    uidmapper = _UIDMapper('100000', '100000', '1000')
+    uidmapper = _UIDMapper.for_current_user()
     container = Container(
         container_id=container_name,
         image_registry=img.registry,

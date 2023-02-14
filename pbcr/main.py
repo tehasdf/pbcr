@@ -1,3 +1,8 @@
+"""PBCR CLI
+
+This defines the CLI entrypoint for PBCR
+"""
+
 import argparse
 
 from pbcr.images import list_images_command, pull_image_command
@@ -6,6 +11,11 @@ from pbcr.storage import make_storage
 
 
 def main():
+    """CLI entrypoint
+
+    This is usually run as a console script, installed into your virtualenv.
+    Use argparse and dispatch to the selected method.
+    """
     parser = argparse.ArgumentParser(
         prog='pbcr',
     )

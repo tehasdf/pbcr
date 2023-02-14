@@ -1,3 +1,5 @@
+"""Implementations of storage backends"""
+
 import io
 import json
 import pathlib
@@ -17,17 +19,23 @@ from pbcr.types import (
 
 
 class FileStorage:
+    """A file-backed Storage, that puts its data in JSON files"""
     def __init__(self, base: pathlib.Path):
         self._base = base
 
     def list_images(self) -> list[Image]:
+        """Return stored images"""
         return []
 
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:
-        tokens_file = self._base / 'pull_tokens.json'
+        """Look up a PullToken for the given registry + repo
+
+        If there is no PullToken for that target stored, return None.
+        """
+        tokens_path = self._base / 'pull_tokens.json'
         try:
-            with tokens_file.open() as f:
-                tokens = json.load(f)
+            with tokens_path.open() as tokens_file:
+                tokens = json.load(tokens_file)
         except (ValueError, IOError):
             tokens = {}
 
@@ -39,89 +47,96 @@ class FileStorage:
 
         if token.is_expired:
             del tokens[registry][repo]
-            with tokens_file.open('w') as f:
-                json.dump(tokens, f, indent=4)
+            with tokens_path.open('w') as tokens_file:
+                json.dump(tokens, tokens_file, indent=4)
             return None
         return token
 
     def store_pull_token(self, registry: str, repo: str, token: PullToken):
-        tokens_file = self._base / 'pull_tokens.json'
-        tokens_file.touch()
-        with tokens_file.open('r+') as f:
+        """Store up a PullToken for the given registry + repo"""
+        tokens_path = self._base / 'pull_tokens.json'
+        tokens_path.touch()
+        with tokens_path.open('r+') as tokens_file:
             try:
-                tokens = json.load(f)
+                tokens = json.load(tokens_file)
             except ValueError:
                 tokens = {}
             tokens.setdefault(registry, {})[repo] = token.asdict()
-            f.seek(0)
-            f.truncate()
-            json.dump(tokens, f, indent=4)
+            tokens_file.seek(0)
+            tokens_file.truncate()
+            json.dump(tokens, tokens_file, indent=4)
 
     def get_manifest(
         self, registry: str, repo: str
     ) -> Manifest | None:
-        manifest_file = self._base / registry / repo / 'manifest.json'
+        """Return the Manifest of the specified image, or None"""
+        manifest_path = self._base / registry / repo / 'manifest.json'
         try:
-            with manifest_file.open() as f:
-                return Manifest(**json.load(f))
+            with manifest_path.open() as manifest_file:
+                return Manifest(**json.load(manifest_file))
         except (ValueError, IOError):
             return None
 
     def store_manifest(self, manifest: Manifest):
-        manifest_file = (
+        """Store an OCI image Manifest"""
+        manifest_path = (
             self._base /
             manifest.registry /
             manifest.name /
             'manifest.json'
         )
-        if not manifest_file.parent.is_dir():
-            manifest_file.parent.mkdir(parents=True)
-        with manifest_file.open('w') as f:
-            json.dump(manifest.asdict(), f, indent=4)
+        if not manifest_path.parent.is_dir():
+            manifest_path.parent.mkdir(parents=True)
+        with manifest_path.open('w') as manifest_file:
+            json.dump(manifest.asdict(), manifest_file, indent=4)
 
     def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
-        config_file = (
+        """Get the ImageConfig for the image described by the Manifest"""
+        config_path = (
             self._base /
             manifest.registry /
             manifest.name /
             'config.json'
         )
         try:
-            with config_file.open() as f:
-                return ImageConfig(**json.load(f))
+            with config_path.open() as config_file:
+                return ImageConfig(**json.load(config_file))
         except (ValueError, IOError):
             return None
 
     def store_image_config(self, manifest: Manifest, config: ImageConfig):
-        config_file = (
+        """Store the ImageConfig for the image described by the Manifest"""
+        config_path = (
             self._base /
             manifest.registry /
             manifest.name /
             'config.json'
         )
-        with config_file.open('w') as f:
-            json.dump(config.asdict(), f, indent=4)
+        with config_path.open('w') as config_file:
+            json.dump(config.asdict(), config_file, indent=4)
 
     def get_image_layer(
         self, manifest: Manifest, digest: Digest,
     ) -> ImageLayer | None:
-        layer_file = (
+        """Layer from the image selected by Manifest, with the given digest"""
+        layer_path = (
             self._base /
             manifest.registry /
             manifest.name /
             'layers' /
             str(digest).replace('sha256:', '')
         )
-        if layer_file.exists():
+        if layer_path.exists():
             return ImageLayer(
                 digest=digest,
-                path=layer_file,
+                path=layer_path,
             )
         return None
 
     def store_image_layer(
         self, manifest: Manifest, digest: Digest, data: bytes,
     ) -> pathlib.Path:
+        """Store a single image FS layer"""
         layer_dir = (
             self._base /
             manifest.registry /
@@ -132,13 +147,14 @@ class FileStorage:
         if not layer_dir.is_dir():
             layer_dir.mkdir(parents=True)
         data_f = io.BytesIO(data)
-        with tarfile.open(fileobj=data_f) as tf:
-            tf.extractall(layer_dir)
+        with tarfile.open(fileobj=data_f) as layer_tar:
+            layer_tar.extractall(layer_dir)
         return layer_dir
 
     def make_container_dir(
-        self, container_id: str, image: Image,
+        self, container_id: str, _: Image,
     ) -> pathlib.Path:
+        """Prepare a directory for a new container"""
         container_chroot = (
             self._base /
             'containers' /
@@ -149,13 +165,14 @@ class FileStorage:
         return container_chroot
 
     def get_container(self, container_id: str) -> Container | None:
+        """Look up a container by its name"""
         registry_path = (
             self._base /
             'containers.json'
         )
-        with registry_path.open() as f:
+        with registry_path.open() as registry_file:
             try:
-                containers = json.load(f)
+                containers = json.load(registry_file)
             except (IOError, ValueError):
                 containers = {}
         if container_id not in containers:
@@ -163,47 +180,50 @@ class FileStorage:
         return Container(**containers[container_id])
 
     def store_container(self, container: Container):
+        """Store the container"""
         registry_path = (
             self._base /
             'containers.json'
         )
         registry_path.touch()
-        with registry_path.open('r+') as f:
+        with registry_path.open('r+') as registry_file:
             try:
-                containers = json.load(f)
+                containers = json.load(registry_file)
             except (IOError, ValueError):
                 containers = {}
-            containers[container.id] = container.asdict()
-            f.seek(0)
-            f.truncate()
-            json.dump(containers, f, indent=4)
+            containers[container.container_id] = container.asdict()
+            registry_file.seek(0)
+            registry_file.truncate()
+            json.dump(containers, registry_file, indent=4)
 
     def remove_container(self, container: Container):
+        """Remove the container from storage"""
         registry_path = (
             self._base /
             'containers.json'
         )
         registry_path.touch()
-        with registry_path.open('r+') as f:
+        with registry_path.open('r+') as registry_file:
             try:
-                containers = json.load(f)
-                del containers[container.id]
+                containers = json.load(registry_file)
+                del containers[container.container_id]
             except (IOError, ValueError, KeyError):
                 return
-            f.seek(0)
-            f.truncate()
-            json.dump(containers, f, indent=4)
+            registry_file.seek(0)
+            registry_file.truncate()
+            json.dump(containers, registry_file, indent=4)
 
         shutil.rmtree(
-            self._base / 'containers' / container.id,
+            self._base / 'containers' / container.container_id,
             ignore_errors=True,
         )
 
 
 def make_storage(
     base_path: pathlib.Path | str=pathlib.Path('~/.pbcr'),
-    **kwargs,
+    **_,
 ) -> Storage:
+    """Create a Storage at the given target path"""
     base_path = pathlib.Path(base_path).expanduser().absolute()
     if not base_path.is_dir():
         base_path.mkdir(parents=True)

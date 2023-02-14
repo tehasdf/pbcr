@@ -1,3 +1,5 @@
+"""Interop with the docker.io registry
+"""
 import requests
 
 from pbcr.types import (
@@ -22,6 +24,7 @@ def _get_pull_token(storage: Storage, repo: str) -> PullToken:
     resp = requests.get(
         'https://auth.docker.io/token?service=registry.docker.io&'
         f'scope=repository:{repo}:pull',
+        timeout=10,
     )
     token_data = resp.json()
     token_data['issued_at'] = token_data['issued_at'][:-4]
@@ -45,7 +48,8 @@ def _find_image_digest(
                 'application/vnd.oci.image.index.v1+json',
             ]),
             'Authorization': f'Bearer {token}',
-        }
+        },
+        timeout=10,
     )
     index_data = index_response.json()
     for manifest_spec in index_data['manifests']:
@@ -83,7 +87,8 @@ def _get_image_manifest(
         headers={
             'Accept': mediatype,
             'Authorization': f'Bearer {token}',
-        }
+        },
+        timeout=10,
     )
     manifest_data = manifest_response.json()
     manifest = Manifest(
@@ -120,7 +125,8 @@ def _get_image_layers(
                 headers={
                     'Accept': layer_mediatype,
                     'Authorization': f'Bearer {token}',
-                }
+                },
+                timeout=10,
             )
             layer_path = storage.store_image_layer(
                 manifest,
@@ -149,7 +155,8 @@ def _get_image_config(
         headers={
             'Accept': manifest.config[1],
             'Authorization': f'Bearer {token}',
-        }
+        },
+        timeout=10,
     )
 
     config_data = config_resp.json()
@@ -159,6 +166,7 @@ def _get_image_config(
 
 
 def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
+    """Fetch image from the docker.io registry"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
     token = _get_pull_token(storage, repo)
@@ -181,6 +189,7 @@ def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
     )
 
 def load_docker_image(storage: Storage, image_name: str) -> Image:
+    """Load an image fetched from the docker.io registry"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
 

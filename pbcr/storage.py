@@ -70,7 +70,13 @@ class FileStorage:
         self, registry: str, repo: str
     ) -> Manifest | None:
         """Return the Manifest of the specified image, or None"""
-        manifest_path = self._base / registry / repo / 'manifest.json'
+        manifest_path = (
+            self._base /
+            'images'/
+            registry /
+            repo /
+            'manifest.json'
+        )
         try:
             with manifest_path.open() as manifest_file:
                 return Manifest(**json.load(manifest_file))
@@ -81,6 +87,7 @@ class FileStorage:
         """Store an OCI image Manifest"""
         manifest_path = (
             self._base /
+            'images' /
             manifest.registry /
             manifest.name /
             'manifest.json'
@@ -94,6 +101,7 @@ class FileStorage:
         """Get the ImageConfig for the image described by the Manifest"""
         config_path = (
             self._base /
+            'images' /
             manifest.registry /
             manifest.name /
             'config.json'
@@ -108,6 +116,7 @@ class FileStorage:
         """Store the ImageConfig for the image described by the Manifest"""
         config_path = (
             self._base /
+            'images' /
             manifest.registry /
             manifest.name /
             'config.json'
@@ -121,6 +130,7 @@ class FileStorage:
         """Layer from the image selected by Manifest, with the given digest"""
         layer_path = (
             self._base /
+            'images' /
             manifest.registry /
             manifest.name /
             'layers' /
@@ -139,6 +149,7 @@ class FileStorage:
         """Store a single image FS layer"""
         layer_dir = (
             self._base /
+            'images' /
             manifest.registry /
             manifest.name /
             'layers' /

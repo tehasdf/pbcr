@@ -9,7 +9,8 @@ from pbcr.types import Storage
 def list_images_command(storage: Storage):
     """Display images in the storage"""
     images = storage.list_images()
-    print(json.dumps(images, indent=4))
+    for image in images:
+        print(image)
 
 
 def pull_image(storage: Storage, image_name: str):

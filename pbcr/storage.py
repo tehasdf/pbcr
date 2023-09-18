@@ -23,9 +23,12 @@ class FileStorage:
     def __init__(self, base: pathlib.Path):
         self._base = base
 
-    def list_images(self) -> list[Image]:
+    def list_images(self) -> list[Manifest]:
         """Return stored images"""
-        return []
+        images_path = self._base / 'images.json'
+        with images_path.open('r') as images_file:
+            images = json.load(images_file)
+        return [Manifest(**img) for img in images.values()]
 
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:
         """Look up a PullToken for the given registry + repo
@@ -96,6 +99,17 @@ class FileStorage:
             manifest_path.parent.mkdir(parents=True)
         with manifest_path.open('w') as manifest_file:
             json.dump(manifest.asdict(), manifest_file, indent=4)
+        images_path = self._base / 'images.json'
+        images_path.touch()
+        with images_path.open('r+') as images_file:
+            try:
+                images = json.load(images_file)
+            except ValueError:
+                images = {}
+            images[manifest.digest] = manifest.asdict()
+            images_file.seek(0)
+            images_file.truncate()
+            json.dump(images, images_file, indent=4)
 
     def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
         """Get the ImageConfig for the image described by the Manifest"""

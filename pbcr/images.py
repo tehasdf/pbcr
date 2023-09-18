@@ -1,6 +1,5 @@
 """Images-related subcommands
 """
-import json
 
 from pbcr.docker_registry import pull_image_from_docker
 from pbcr.types import Storage

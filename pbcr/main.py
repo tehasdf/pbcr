@@ -4,10 +4,12 @@ This defines the CLI entrypoint for PBCR
 """
 
 import argparse
+import pathlib
 
 from pbcr.images import list_images_command, pull_image_command
 from pbcr.run import run_command
-from pbcr.storage import make_storage
+from pbcr.storage import FileImageStorage, FileContainerStorage
+from pbcr.types import ContainerConfig
 
 
 def main():
@@ -50,15 +52,26 @@ def main():
     kwargs = vars(parser.parse_args())
 
     command = kwargs.pop('command', None)
-    storage = make_storage(**kwargs)
+    base_path = pathlib.Path('~/.pbcr').expanduser().absolute()
+    image_storage = FileImageStorage.create(base_path)
+    container_storage = FileContainerStorage.create(base_path)
+
 
     match command:
         case "images":
-            list_images_command(storage, **kwargs)
+            list_images_command(image_storage, **kwargs)
         case "pull":
-            pull_image_command(storage, **kwargs)
+            pull_image_command(image_storage, **kwargs)
         case "run":
             image_name = kwargs.pop('image_name')[0]
-            run_command(storage, image_name, **kwargs)
+            cfg = ContainerConfig(
+                image_name=image_name,
+                **kwargs,
+            )
+            run_command(
+                image_storage,
+                container_storage,
+                cfg,
+            )
         case _:
             parser.print_help()

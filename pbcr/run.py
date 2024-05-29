@@ -13,7 +13,14 @@ import uuid
 from typing import Iterable
 
 from pbcr.docker_registry import load_docker_image
-from pbcr.types import Storage, Container, Image
+from pbcr.types import (
+    ImageStorage,
+    ContainerStorage,
+    Container,
+    Image,
+    ContainerConfig,
+)
+
 
 libc = ctypes.CDLL('libc.so.6')
 
@@ -144,7 +151,7 @@ class _ForkBarrier:
         self._evt = threading.Event()
 
     def __enter__(self):
-        signal.signal(signal.SIGUSR1, lambda sig, frame: self._evt.set())
+        signal.signal(signal.SIGUSR1, lambda _sig, frame: self._evt.set())
         parent_pid = os.getpid()
         pid = os.fork()
         self.other_pid = pid or parent_pid
@@ -214,23 +221,22 @@ def _get_container_spec(container_fs: _ContainerFS, uidmapper: _UIDMapper):
 
             return container_data['uids'], container_data['gids']
 
-def _choose_image(storage: Storage, image_name: str) -> Image:
+
+def _choose_image(storage: ImageStorage, image_name: str) -> Image:
     if image_name.startswith('docker.io/'):
         image_name = image_name.replace('docker.io/', '', 1)
         return load_docker_image(storage, image_name)
     raise ValueError(f'unknown image reference: {image_name}')
 
+
 def run_command(
-    storage: Storage,
-    image_name: str,
-    container_name: str | None=None,
-    daemon: bool=False,
-    volumes: list[str] | None=None,
+    image_storage: ImageStorage,
+    container_storage: ContainerStorage,
+    cfg: ContainerConfig,
 ):
     """The CLI command that runs a container"""
-    if not container_name:
-        container_name = str(uuid.uuid4())
-    img = _choose_image(storage, image_name)
+    container_name = cfg.container_name or str(uuid.uuid4())
+    img = _choose_image(image_storage, cfg.image_name)
 
     uidmapper = _UIDMapper.for_current_user()
     container = Container(
@@ -239,15 +245,15 @@ def run_command(
         image_name=img.manifest.name,
         pid=None,
     )
-    storage.store_container(container)
+    container_storage.store_container(container)
 
     container_fs = _ContainerFS.prepare(
-        storage.make_container_dir(container_name, img),
+        container_storage.make_container_dir(container_name),
         [ll.path for ll in img.layers],
     )
-    container_fs.add_volumes(volumes)
+    container_fs.add_volumes(cfg.volumes)
 
-    entrypoint = img.config.config['Entrypoint']
+    entrypoint = img.config.config.get('Entrypoint')
     command = img.config.config['Cmd']
 
     if not entrypoint:
@@ -269,16 +275,16 @@ def run_command(
         else:
             barrier.wait()
             container.pid = barrier.other_pid
-            storage.store_container(container)
+            container_storage.store_container(container)
 
             uidmapper.newuidmap(barrier.other_pid, container_uids)
             uidmapper.newgidmap(barrier.other_pid, container_gids)
             barrier.signal()
 
-            if not daemon:
+            if not cfg.daemon:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
                 _, retcode = os.waitpid(barrier.other_pid, 0)
-                storage.remove_container(container)
+                container_storage.remove_container(container)
                 container_fs.remove()
                 sys.exit(retcode)

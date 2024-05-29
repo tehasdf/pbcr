@@ -3,7 +3,7 @@
 import requests
 
 from pbcr.types import (
-    Storage,
+    ImageStorage,
     PullToken,
     Manifest,
     Digest,
@@ -17,7 +17,7 @@ from pbcr.types import (
 REGISTRY_BASE = 'https://registry-1.docker.io'
 
 
-def _get_pull_token(storage: Storage, repo: str) -> PullToken:
+def _get_pull_token(storage: ImageStorage, repo: str) -> PullToken:
     if token := storage.get_pull_token(registry='docker.io', repo=repo):
         return token
 
@@ -66,7 +66,7 @@ def _find_image_digest(
 
 
 def _get_image_manifest(
-    storage: Storage,
+    storage: ImageStorage,
     repo: str,
     digest: Digest | None=None,
     mediatype: MediaType | None=None,
@@ -109,7 +109,7 @@ def _get_image_manifest(
 
 
 def _get_image_layers(
-    storage: Storage,
+    storage: ImageStorage,
     manifest: Manifest,
     token: PullToken | None=None,
 ) -> list[ImageLayer]:
@@ -142,7 +142,7 @@ def _get_image_layers(
 
 
 def _get_image_config(
-    storage: Storage,
+    storage: ImageStorage,
     manifest: Manifest,
     token: PullToken | None,
 ) -> ImageConfig:
@@ -165,7 +165,7 @@ def _get_image_config(
     return image_config
 
 
-def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
+def pull_image_from_docker(storage: ImageStorage, image_name: str) -> Image:
     """Fetch image from the docker.io registry"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
@@ -188,7 +188,7 @@ def pull_image_from_docker(storage: Storage, image_name: str) -> Image:
         layers=layers,
     )
 
-def load_docker_image(storage: Storage, image_name: str) -> Image:
+def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
     """Load an image fetched from the docker.io registry"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'

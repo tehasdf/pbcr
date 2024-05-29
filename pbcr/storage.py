@@ -276,4 +276,3 @@ class FileContainerStorage:
             except (IOError, ValueError):
                 containers = {}
         return [Container(**c) for c in containers.values()]
-

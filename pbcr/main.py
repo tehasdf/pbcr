@@ -43,6 +43,11 @@ def main():
         dest='daemon',
     )
     run_parser.add_argument(
+        '--rm',
+        action='store_true',
+        dest='remove',
+    )
+    run_parser.add_argument(
         '-v',
         '--volume',
         dest='volumes',
@@ -68,6 +73,8 @@ def main():
                 image_name=image_name,
                 **kwargs,
             )
+            if cfg.daemon and cfg.remove:
+                raise ValueError('Cannot run in daemon mode with remove')
             run_command(
                 image_storage,
                 container_storage,

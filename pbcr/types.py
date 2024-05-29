@@ -200,3 +200,4 @@ class ContainerConfig:
     container_name: str | None = None
     daemon: bool = False
     volumes: list[str] | None = None
+    remove: bool = False

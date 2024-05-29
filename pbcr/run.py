@@ -285,6 +285,7 @@ def run_command(
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
                 _, retcode = os.waitpid(barrier.other_pid, 0)
-                container_storage.remove_container(container)
-                container_fs.remove()
+                if cfg.remove:
+                    container_storage.remove_container(container)
+                    container_fs.remove()
                 sys.exit(retcode)

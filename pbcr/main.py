@@ -9,6 +9,7 @@ import pathlib
 from pbcr.images import list_images_command, pull_image_command
 from pbcr.run import run_command
 from pbcr.storage import FileImageStorage, FileContainerStorage
+from pbcr.types import ContainerConfig
 
 
 def main():
@@ -63,11 +64,14 @@ def main():
             pull_image_command(image_storage, **kwargs)
         case "run":
             image_name = kwargs.pop('image_name')[0]
+            cfg = ContainerConfig(
+                image_name=image_name,
+                **kwargs,
+            )
             run_command(
                 image_storage,
                 container_storage,
-                image_name,
-                **kwargs,
+                cfg,
             )
         case _:
             parser.print_help()

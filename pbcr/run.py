@@ -13,7 +13,14 @@ import uuid
 from typing import Iterable
 
 from pbcr.docker_registry import load_docker_image
-from pbcr.types import ImageStorage, ContainerStorage, Container, Image
+from pbcr.types import (
+    ImageStorage,
+    ContainerStorage,
+    Container,
+    Image,
+    ContainerConfig,
+)
+
 
 libc = ctypes.CDLL('libc.so.6')
 
@@ -225,15 +232,11 @@ def _choose_image(storage: ImageStorage, image_name: str) -> Image:
 def run_command(
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
-    image_name: str,
-    container_name: str | None=None,
-    daemon: bool=False,
-    volumes: list[str] | None=None,
+    cfg: ContainerConfig,
 ):
     """The CLI command that runs a container"""
-    if not container_name:
-        container_name = str(uuid.uuid4())
-    img = _choose_image(image_storage, image_name)
+    container_name = cfg.container_name or str(uuid.uuid4())
+    img = _choose_image(image_storage, cfg.image_name)
 
     uidmapper = _UIDMapper.for_current_user()
     container = Container(
@@ -248,7 +251,7 @@ def run_command(
         container_storage.make_container_dir(container_name),
         [ll.path for ll in img.layers],
     )
-    container_fs.add_volumes(volumes)
+    container_fs.add_volumes(cfg.volumes)
 
     entrypoint = img.config.config.get('Entrypoint')
     command = img.config.config['Cmd']
@@ -278,7 +281,7 @@ def run_command(
             uidmapper.newgidmap(barrier.other_pid, container_gids)
             barrier.signal()
 
-            if not daemon:
+            if not cfg.daemon:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
                 _, retcode = os.waitpid(barrier.other_pid, 0)

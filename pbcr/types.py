@@ -191,3 +191,11 @@ class ContainerStorage(typing.Protocol):
     def remove_container(self, container: Container):
         """Remove the container from storage"""
 
+
+@dataclass
+class ContainerConfig:
+    image_name: str
+    container_name: str | None = None
+    daemon: bool = False
+    volumes: list[str] | None = None
+

@@ -5,7 +5,7 @@ Project-wide type definitions, and utility types, are declared here.
 
 import pathlib
 import typing
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from dataclasses import dataclass, asdict, fields
 
@@ -52,7 +52,7 @@ class PullToken:
     @property
     def is_expired(self):
         """Has this token already expired?"""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
     def __str__(self):
         return self.token

@@ -114,7 +114,7 @@ class _ContainerFS:
         ]
         subprocess.call(mnt_cmd)
 
-    def add_volumes(self, volumes: list[str]):
+    def add_volumes(self, volumes: list[str] | None):
         """Add volumes to this container's "lower" overlayfs dirs"""
         if not volumes:
             return
@@ -151,7 +151,7 @@ class _ForkBarrier:
         self._evt = threading.Event()
 
     def __enter__(self):
-        signal.signal(signal.SIGUSR1, lambda _sig, frame: self._evt.set())
+        signal.signal(signal.SIGUSR1, lambda *_: self._evt.set())
         parent_pid = os.getpid()
         pid = os.fork()
         self.other_pid = pid or parent_pid
@@ -161,12 +161,13 @@ class _ForkBarrier:
 
         return self
 
-    def __exit__(self, etype, evalue, traceback):
+    def __exit__(self, *_):
         signal.signal(signal.SIGUSR1, signal.SIG_DFL)
 
     def signal(self):
         """Signal the other side"""
-        os.kill(self.other_pid, signal.SIGUSR1)
+        if self.other_pid is not None:
+            os.kill(self.other_pid, signal.SIGUSR1)
 
     def wait(self):
         """Wait for a signal called from the other side"""
@@ -189,7 +190,7 @@ def _find_ids(source_path) -> list[str]:
 def _get_container_spec(container_fs: _ContainerFS, uidmapper: _UIDMapper):
     evt = threading.Event()
     ids_storage_path = container_fs.container_dir / 'container.json'
-    signal.signal(signal.SIGUSR1, lambda sig, frame: evt.set())
+    signal.signal(signal.SIGUSR1, lambda *_: evt.set())
 
     with _ForkBarrier() as barrier:
         if barrier.is_child:
@@ -210,8 +211,9 @@ def _get_container_spec(container_fs: _ContainerFS, uidmapper: _UIDMapper):
         else:
             barrier.wait()
 
-            uidmapper.newuidmap(barrier.other_pid, [])
-            uidmapper.newgidmap(barrier.other_pid, [])
+            if barrier.other_pid is not None:
+                uidmapper.newuidmap(barrier.other_pid, [])
+                uidmapper.newgidmap(barrier.other_pid, [])
 
             barrier.signal()
             barrier.wait()
@@ -277,14 +279,17 @@ def run_command(
             container.pid = barrier.other_pid
             container_storage.store_container(container)
 
-            uidmapper.newuidmap(barrier.other_pid, container_uids)
-            uidmapper.newgidmap(barrier.other_pid, container_gids)
+            if barrier.other_pid is not None:
+                uidmapper.newuidmap(barrier.other_pid, container_uids)
+                uidmapper.newgidmap(barrier.other_pid, container_gids)
             barrier.signal()
 
             if not cfg.daemon:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-                _, retcode = os.waitpid(barrier.other_pid, 0)
+                retcode = 1
+                if barrier.other_pid is not None:
+                    _, retcode = os.waitpid(barrier.other_pid, 0)
                 if cfg.remove:
                     container_storage.remove_container(container)
                     container_fs.remove()

@@ -185,7 +185,7 @@ class FileImageStorage:
 
 
 class FileContainerStorage:
-
+    """A file-backed Storage, that puts its data in JSON files"""
     @classmethod
     def create(cls, base_path: pathlib.Path):
         """Create a new FileContainerStorage at the given target path"""
@@ -263,4 +263,3 @@ class FileContainerStorage:
             self._base / 'containers' / container.container_id,
             ignore_errors=True,
         )
-

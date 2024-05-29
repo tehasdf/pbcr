@@ -140,7 +140,7 @@ class ImageStorage(typing.Protocol):
 
     def list_images(self) -> list[Manifest]:
         """Return all Images in this storage"""
-        ...
+        raise NotImplementedError
 
     def get_manifest(
         self, registry: str, repo: str,
@@ -172,15 +172,16 @@ class ImageStorage(typing.Protocol):
         data: bytes,
     ) -> pathlib.Path:
         """Store a single image FS layer"""
-        ...
+        raise NotImplementedError
 
 
 class ContainerStorage(typing.Protocol):
+    """Methods that a container data storage must implement"""
     def make_container_dir(
         self, container_id: str,
     ) -> pathlib.Path:
         """Prepare a directory for a new container"""
-        ...
+        raise NotImplementedError
 
     def get_container(self, container_id: str) -> Container | None:
         """Look up a container by its name"""
@@ -194,8 +195,8 @@ class ContainerStorage(typing.Protocol):
 
 @dataclass
 class ContainerConfig:
+    """Settings for running a container"""
     image_name: str
     container_name: str | None = None
     daemon: bool = False
     volumes: list[str] | None = None
-

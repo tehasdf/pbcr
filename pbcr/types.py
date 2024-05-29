@@ -84,8 +84,6 @@ class ImageConfig:
     """
     architecture: str
     config: dict[str, typing.Any]
-    container: str
-    container_config: dict[str, typing.Any]
     history: list[dict]
 
     def __init__(self, **kwargs):
@@ -129,7 +127,7 @@ class Container:
         return asdict(self)
 
 
-class Storage(typing.Protocol):  # pragma: no cover
+class ImageStorage(typing.Protocol):
     """Methods that an image data storage must implement"""
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:
         """Look up a PullToken for the given registry + repo
@@ -140,8 +138,9 @@ class Storage(typing.Protocol):  # pragma: no cover
     def store_pull_token(self, registry: str, repo: str, token: PullToken):
         """Store up a PullToken for the given registry + repo"""
 
-    def list_images(self) -> list[Image]:
+    def list_images(self) -> list[Manifest]:
         """Return all Images in this storage"""
+        ...
 
     def get_manifest(
         self, registry: str, repo: str,
@@ -154,7 +153,11 @@ class Storage(typing.Protocol):  # pragma: no cover
     def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
         """Get the ImageConfig for the image described by the Manifest"""
 
-    def store_image_config(self, manifest: Manifest, config: ImageConfig):
+    def store_image_config(
+        self,
+        manifest: Manifest,
+        config: ImageConfig,
+    ):
         """Store the ImageConfig for the image described by the Manifest"""
 
     def get_image_layer(
@@ -162,16 +165,22 @@ class Storage(typing.Protocol):  # pragma: no cover
     ) -> ImageLayer | None:
         """Layer from the image selected by Manifest, with the given digest"""
 
-
     def store_image_layer(
-        self, manifest: Manifest, digest: Digest, data: bytes,
-    ):
+        self,
+        manifest: Manifest,
+        digest: Digest,
+        data: bytes,
+    ) -> pathlib.Path:
         """Store a single image FS layer"""
+        ...
 
+
+class ContainerStorage(typing.Protocol):
     def make_container_dir(
-        self, container_id: str, image: Image,
+        self, container_id: str,
     ) -> pathlib.Path:
         """Prepare a directory for a new container"""
+        ...
 
     def get_container(self, container_id: str) -> Container | None:
         """Look up a container by its name"""
@@ -181,3 +190,4 @@ class Storage(typing.Protocol):  # pragma: no cover
 
     def remove_container(self, container: Container):
         """Remove the container from storage"""
+

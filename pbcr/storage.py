@@ -7,8 +7,6 @@ import shutil
 import tarfile
 
 from pbcr.types import (
-    Image,
-    Storage,
     PullToken,
     Manifest,
     Digest,
@@ -18,8 +16,17 @@ from pbcr.types import (
 )
 
 
-class FileStorage:
+class FileImageStorage:
     """A file-backed Storage, that puts its data in JSON files"""
+
+    @classmethod
+    def create(cls, base_path: pathlib.Path):
+        """Create a new FileImageStorage at the given target path"""
+        base_path = base_path.expanduser().absolute()
+        if not base_path.is_dir():
+            base_path.mkdir(parents=True)
+        return cls(base=base_path)
+
     def __init__(self, base: pathlib.Path):
         self._base = base
 
@@ -176,8 +183,22 @@ class FileStorage:
             layer_tar.extractall(layer_dir)
         return layer_dir
 
+
+class FileContainerStorage:
+
+    @classmethod
+    def create(cls, base_path: pathlib.Path):
+        """Create a new FileContainerStorage at the given target path"""
+        base_path = base_path.expanduser().absolute()
+        if not base_path.is_dir():
+            base_path.mkdir(parents=True)
+        return cls(base=base_path)
+
+    def __init__(self, base: pathlib.Path):
+        self._base = base
+
     def make_container_dir(
-        self, container_id: str, _: Image,
+        self, container_id: str,
     ) -> pathlib.Path:
         """Prepare a directory for a new container"""
         container_chroot = (
@@ -243,13 +264,3 @@ class FileStorage:
             ignore_errors=True,
         )
 
-
-def make_storage(
-    base_path: pathlib.Path | str=pathlib.Path('~/.pbcr'),
-    **_,
-) -> Storage:
-    """Create a Storage at the given target path"""
-    base_path = pathlib.Path(base_path).expanduser().absolute()
-    if not base_path.is_dir():
-        base_path.mkdir(parents=True)
-    return FileStorage(base=base_path)

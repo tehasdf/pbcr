@@ -192,6 +192,10 @@ class ContainerStorage(typing.Protocol):
     def remove_container(self, container: Container):
         """Remove the container from storage"""
 
+    def list_containers(self) -> list[Container]:
+        """List all containers in storage"""
+        raise NotImplementedError
+
 
 @dataclass
 class ContainerConfig:

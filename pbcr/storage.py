@@ -263,3 +263,17 @@ class FileContainerStorage:
             self._base / 'containers' / container.container_id,
             ignore_errors=True,
         )
+
+    def list_containers(self) -> list[Container]:
+        """Return stored containers"""
+        registry_path = (
+            self._base /
+            'containers.json'
+        )
+        with registry_path.open() as registry_file:
+            try:
+                containers = json.load(registry_file)
+            except (IOError, ValueError):
+                containers = {}
+        return [Container(**c) for c in containers.values()]
+

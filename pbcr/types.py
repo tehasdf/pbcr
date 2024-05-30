@@ -27,7 +27,10 @@ class PullToken:
         return cls(
             token=data['token'],
             expires_in=data.get('expires_in', 300),
-            issued_at=datetime.fromisoformat(data['issued_at']),
+            issued_at=(
+                datetime.fromisoformat(data['issued_at'])
+                .replace(tzinfo=timezone.utc)
+            ),
         )
 
     def asdict(self) -> dict[str, str | int]:

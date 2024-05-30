@@ -49,8 +49,7 @@ def _stop_container_process(pid: int):
             os.kill(pid, 0)
         except OSError:
             return
-        else:
-            time.sleep(0.1)
+        time.sleep(0.1)
     # after 50 retries, ie. 5 seconds, if it's still up....
     # KILL DASH NINE
     os.kill(pid, 9)

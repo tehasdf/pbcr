@@ -82,7 +82,7 @@ class FileImageStorage:
         """Return the Manifest of the specified image, or None"""
         manifest_path = (
             self._base /
-            'images'/
+            'images' /
             registry /
             repo /
             'manifest.json'
@@ -232,15 +232,15 @@ class FileContainerStorage:
             'containers.json'
         )
         registry_path.touch()
-        with registry_path.open('r+') as registry_file:
-            try:
+        try:
+            with registry_path.open('r+') as registry_file:
                 containers = json.load(registry_file)
-            except (IOError, ValueError):
-                containers = {}
-            containers[container.container_id] = container.asdict()
-            registry_file.seek(0)
-            registry_file.truncate()
-            json.dump(containers, registry_file, indent=4)
+                containers[container.container_id] = container.asdict()
+                registry_file.seek(0)
+                registry_file.truncate()
+                json.dump(containers, registry_file, indent=4)
+        except (IOError, ValueError):
+            containers = {}
 
     def remove_container(self, container: Container):
         """Remove the container from storage"""
@@ -249,15 +249,15 @@ class FileContainerStorage:
             'containers.json'
         )
         registry_path.touch()
-        with registry_path.open('r+') as registry_file:
-            try:
+        try:
+            with registry_path.open('r+') as registry_file:
                 containers = json.load(registry_file)
                 del containers[container.container_id]
-            except (IOError, ValueError, KeyError):
-                return
-            registry_file.seek(0)
-            registry_file.truncate()
-            json.dump(containers, registry_file, indent=4)
+                registry_file.seek(0)
+                registry_file.truncate()
+                json.dump(containers, registry_file, indent=4)
+        except (IOError, ValueError, KeyError):
+            return
 
         shutil.rmtree(
             self._base / 'containers' / container.container_id,
@@ -270,9 +270,9 @@ class FileContainerStorage:
             self._base /
             'containers.json'
         )
-        with registry_path.open() as registry_file:
-            try:
+        try:
+            with registry_path.open() as registry_file:
                 containers = json.load(registry_file)
-            except (IOError, ValueError):
-                containers = {}
+        except (IOError, ValueError):
+            containers = {}
         return [Container(**c) for c in containers.values()]

@@ -22,7 +22,8 @@ test = [
     "pytest-cov",
     "pylint",
     "mypy",
+    "scapy",
 ]
 
 [tool.pytest.ini_options]
-addopts = "-svx --cov --cov-report term-missing"
+#addopts = "-svx --cov --cov-report term-missing"

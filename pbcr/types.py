@@ -7,7 +7,7 @@ import pathlib
 import typing
 from datetime import datetime, timedelta, timezone
 
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 
 
 Digest = typing.NewType('Digest', str)
@@ -204,6 +204,8 @@ class ContainerStorage(typing.Protocol):
 class ContainerConfig:
     """Settings for running a container"""
     image_name: str
+    entrypoint: str = field(default='')
+    command: str = field(default='')
     container_name: str | None = None
     daemon: bool = False
     volumes: list[str] | None = None

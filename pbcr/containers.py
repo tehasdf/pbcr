@@ -8,7 +8,7 @@ import time
 from pbcr.types import ContainerStorage
 
 
-def ps(storage: ContainerStorage):
+def list_containers(storage: ContainerStorage):
     """List containers"""
     containers = storage.list_containers()
     for container in containers:

@@ -6,7 +6,7 @@ This defines the CLI entrypoint for PBCR
 import argparse
 import pathlib
 
-from pbcr.containers import rm_container, ps
+from pbcr.containers import rm_container, list_containers
 from pbcr.images import list_images_command, pull_image_command
 from pbcr.run import run_command
 from pbcr.storage import FileImageStorage, FileContainerStorage
@@ -38,6 +38,12 @@ def main():
         help='Container name',
     )
     run_parser.add_argument(
+        '--entrypoint',
+        dest='entrypoint',
+        default='',
+        required=False,
+    )
+    run_parser.add_argument(
         '-d',
         '--daemon',
         action='store_true',
@@ -52,7 +58,7 @@ def main():
         '-v',
         '--volume',
         dest='volumes',
-        nargs='*',
+        action='append',
     )
     _ = subparsers.add_parser('ps')
     rm_parser = subparsers.add_parser('rm')
@@ -70,7 +76,6 @@ def main():
     base_path = pathlib.Path('~/.pbcr').expanduser().absolute()
     image_storage = FileImageStorage.create(base_path)
     container_storage = FileContainerStorage.create(base_path)
-
 
     match command:
         case "images":
@@ -91,7 +96,7 @@ def main():
                 cfg,
             )
         case "ps":
-            ps(container_storage)
+            list_containers(container_storage)
         case "rm":
             rm_container(
                 container_storage,

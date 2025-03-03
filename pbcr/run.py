@@ -1,17 +1,19 @@
 """Commands and utilities for running a container"""
 
-import ctypes
 import json
 import os
 import pathlib
 import pwd
+import shlex
 import signal
 import subprocess
 import sys
 import threading
 import uuid
-from typing import Iterable
 
+import typing as t
+
+from pbcr import libc
 from pbcr.docker_registry import load_docker_image
 from pbcr.types import (
     ImageStorage,
@@ -20,15 +22,13 @@ from pbcr.types import (
     Image,
     ContainerConfig,
 )
-
-
-libc = ctypes.CDLL('libc.so.6')
-
-CLONE_NEWNS = 0x00020000
-CLONE_NEWPID = 0x20000000
-CLONE_NEWNET = 0x40000000
-CLONE_NEWUSER = 0x10000000
-CLONE_NEWCGROUP = 0x02000000
+from pbcr.networking import (
+    IPInfo,
+    TCPInfo,
+    get_process_net_fd,
+    TCPStack,
+)
+from pbcr.forkbarrier import ForkBarrier
 
 
 class _UIDMapper:
@@ -71,12 +71,12 @@ class _UIDMapper:
 
         return args
 
-    def newuidmap(self, pid: int, uids: Iterable[str]):
+    def newuidmap(self, pid: int, uids: t.Iterable[str]):
         """Use newuidmap to subuid the given ids, for the given pid"""
         args = self._format_args(set(uids), self._subuid)
         subprocess.call(['/usr/bin/newuidmap', str(pid)] + args)
 
-    def newgidmap(self, pid: int, gids: Iterable[str]):
+    def newgidmap(self, pid: int, gids: t.Iterable[str]):
         """Use newgidmap to subgid the given ids, for the given pid"""
         args = self._format_args(set(gids), self._subgid)
         subprocess.call(['/usr/bin/newgidmap', str(pid)] + args)
@@ -127,8 +127,8 @@ class _ContainerFS:
             target = container_volumes / volume_target
             if not target.parent.is_dir():
                 target.parent.mkdir(parents=True)
-            if target.exists():
-                os.unlink(target)
+        #    if target.exists():
+        #        os.unlink(target)
             os.link(volume_source, target)
             self._lowers.append(container_volumes)
 
@@ -141,38 +141,6 @@ class _ContainerFS:
         """Remove the container directories"""
         # for some reason, I can't remove in-process?
         subprocess.call(['/bin/rm', '-rf', str(self.container_dir)])
-
-
-class _ForkBarrier:
-    def __init__(self):
-        self.is_parent = True
-        self.is_child = False
-        self.other_pid = None
-        self._evt = threading.Event()
-
-    def __enter__(self):
-        signal.signal(signal.SIGUSR1, lambda *_: self._evt.set())
-        parent_pid = os.getpid()
-        pid = os.fork()
-        self.other_pid = pid or parent_pid
-
-        self.is_child = pid == 0
-        self.is_parent = not self.is_child
-
-        return self
-
-    def __exit__(self, *_):
-        signal.signal(signal.SIGUSR1, signal.SIG_DFL)
-
-    def signal(self):
-        """Signal the other side"""
-        if self.other_pid is not None:
-            os.kill(self.other_pid, signal.SIGUSR1)
-
-    def wait(self):
-        """Wait for a signal called from the other side"""
-        self._evt.wait()
-        self._evt.clear()
 
 
 def _find_ids(source_path) -> list[str]:
@@ -192,16 +160,23 @@ def _get_container_spec(container_fs: _ContainerFS, uidmapper: _UIDMapper):
     ids_storage_path = container_fs.container_dir / 'container.json'
     signal.signal(signal.SIGUSR1, lambda *_: evt.set())
 
-    with _ForkBarrier() as barrier:
+    with ForkBarrier() as barrier:
         if barrier.is_child:
-            libc.unshare(CLONE_NEWUSER | CLONE_NEWCGROUP | CLONE_NEWNS)
+            libc.unshare(
+                libc.CLONE_NEWUSER |
+                libc.CLONE_NEWCGROUP |
+                libc.CLONE_NEWNS |
+                libc.CLONE_NEWNET,
+            )
             barrier.signal()
             barrier.wait()
             container_fs.mount()
 
             container = {
-                'uids': _find_ids(container_fs.container_chroot / 'etc/passwd'),
-                'gids': _find_ids(container_fs.container_chroot / 'etc/group')
+                'uids': _find_ids(
+                    container_fs.container_chroot / 'etc/passwd'),
+                'gids': _find_ids(
+                    container_fs.container_chroot / 'etc/group')
             }
             with ids_storage_path.open('w') as container_file:
                 json.dump(container, container_file)
@@ -237,6 +212,8 @@ def run_command(
     cfg: ContainerConfig,
 ):
     """The CLI command that runs a container"""
+    # this has to be fixed later
+    # pylint: disable=too-many-locals
     container_name = cfg.container_name or str(uuid.uuid4())
     img = _choose_image(image_storage, cfg.image_name)
 
@@ -255,24 +232,34 @@ def run_command(
     )
     container_fs.add_volumes(cfg.volumes)
 
-    entrypoint = img.config.config.get('Entrypoint')
-    command = img.config.config['Cmd']
-
-    if not entrypoint:
-        entrypoint = [command[0]]
+    if cfg.entrypoint:
+        entrypoint = cfg.entrypoint
+        to_run = shlex.split(entrypoint + cfg.command)
+    else:
+        entrypoint = img.config.config.get('Entrypoint')
+        command = img.config.config['Cmd']
+        if not entrypoint:
+            entrypoint = [command[0]]
+            command = command[1:]
+        to_run = entrypoint + command
 
     container_uids, container_gids = _get_container_spec(
         container_fs, uidmapper)
 
-    with _ForkBarrier() as barrier:
+    with ForkBarrier() as barrier:
         if barrier.is_child:
-            libc.unshare(CLONE_NEWUSER | CLONE_NEWCGROUP | CLONE_NEWNS)
+            libc.unshare(
+                libc.CLONE_NEWUSER |
+                libc.CLONE_NEWCGROUP |
+                libc.CLONE_NEWNS |
+                libc.CLONE_NEWNET,
+            )
             barrier.signal()
             barrier.wait()
 
             container_fs.mount()
             container_fs.chroot()
-            os.execv(entrypoint[0], entrypoint + command)
+            os.execv(to_run[0], to_run)
 
         else:
             barrier.wait()
@@ -282,8 +269,17 @@ def run_command(
             if barrier.other_pid is not None:
                 uidmapper.newuidmap(barrier.other_pid, container_uids)
                 uidmapper.newgidmap(barrier.other_pid, container_gids)
-            barrier.signal()
 
+            if barrier.other_pid is not None:
+                net_fd = get_process_net_fd(barrier.other_pid)
+                barrier.signal()
+                reader_fd = os.fdopen(net_fd, "r+b", buffering=0)
+                reader_thread = threading.Thread(
+                    target=_reader,
+                    args=(reader_fd,),
+                    daemon=True,
+                )
+                reader_thread.start()
             if not cfg.daemon:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -294,3 +290,15 @@ def run_command(
                     container_storage.remove_container(container)
                     container_fs.remove()
                 sys.exit(retcode)
+
+
+def _reader(reader_fd):
+    tcp = TCPStack(reader_fd.write)
+    tcp.start()
+    while True:
+        data = bytearray(reader_fd.read(8192))
+
+        iph, data = IPInfo.parse(data)
+        if iph.proto == 6:  # tcp
+            tcph, data = TCPInfo.parse(iph, data)
+            tcp.handle_packet(iph, tcph, data)

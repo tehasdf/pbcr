@@ -38,7 +38,7 @@ def _find_image_digest(
     repo: str,
     tag: str,
     token: PullToken,
-    architecture: str='amd64',
+    architecture: str = 'amd64',
 ) -> tuple[Digest, MediaType]:
     index_response = requests.get(
         f'{REGISTRY_BASE}/v2/{repo}/manifests/{tag}',
@@ -68,9 +68,9 @@ def _find_image_digest(
 def _get_image_manifest(
     storage: ImageStorage,
     repo: str,
-    digest: Digest | None=None,
-    mediatype: MediaType | None=None,
-    token: PullToken | None=None,
+    digest: Digest | None = None,
+    mediatype: MediaType | None = None,
+    token: PullToken | None = None,
 ) -> Manifest:
     if manifest := storage.get_manifest(
         registry='docker.io', repo=repo,
@@ -83,7 +83,7 @@ def _get_image_manifest(
     if digest is None:
         raise RuntimeError('need digest to fetch manifest')
     manifest_response = requests.get(
-        url = f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
+        url=f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
         headers={
             'Accept': mediatype,
             'Authorization': f'Bearer {token}',
@@ -111,7 +111,7 @@ def _get_image_manifest(
 def _get_image_layers(
     storage: ImageStorage,
     manifest: Manifest,
-    token: PullToken | None=None,
+    token: PullToken | None = None,
 ) -> list[ImageLayer]:
     layers = []
     for layer_digest, layer_mediatype in manifest.layers:
@@ -187,6 +187,7 @@ def pull_image_from_docker(storage: ImageStorage, image_name: str) -> Image:
         config=image_config,
         layers=layers,
     )
+
 
 def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
     """Load an image fetched from the docker.io registry"""

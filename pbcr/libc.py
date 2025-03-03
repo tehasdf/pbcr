@@ -1,0 +1,29 @@
+"""Frontend for the libc functions and constants we use.
+"""
+import ctypes
+
+
+_libc = ctypes.CDLL('libc.so.6')
+
+CLONE_NEWNS = 0x00020000
+CLONE_NEWPID = 0x20000000
+CLONE_NEWNET = 0x40000000
+CLONE_NEWUSER = 0x10000000
+CLONE_NEWCGROUP = 0x02000000
+
+IFNAMSIZ = 16
+IFF_TUN = 0x0001
+IFF_TAP = 0x0002
+IFF_NO_PI = 0x1000
+ARPHRD_ETHER = 1
+TUNSETIFF = 0x400454ca
+TUNSETLINK = 0x400454cd
+IFF_UP = 0x1
+IFF_RUNNING = 0x40
+
+SIOCSIFADDR = 0x8916
+SIOCSIFNETMASK = 0x891c
+SIOCSIFFLAGS = 0x8914
+
+unshare = _libc.unshare
+setns = _libc.setns

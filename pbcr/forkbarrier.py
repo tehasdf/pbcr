@@ -1,9 +1,12 @@
+"""A simple barrier for synchronizing between parent and child processes"""
+
 import os
 import signal
 import threading
 
 
 class ForkBarrier:
+    """A simple barrier for synchronizing between parent and child processes"""
     def __init__(self):
         self.is_parent = True
         self.is_child = False

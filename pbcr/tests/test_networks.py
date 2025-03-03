@@ -1,3 +1,5 @@
+"""Tests for the networking module."""
+
 import socket
 
 from scapy.layers.inet import IP, TCP
@@ -6,11 +8,13 @@ from pbcr.networking import checksum, IPInfo, TCPInfo
 
 
 def test_ip_checksum():
+    """Test the IP checksum function"""
     pck = IP(src="192.168.2.1", dst="192.168.2.2")
     assert checksum(pck.build()) == 0
 
 
 def test_ip_parse():
+    """Test parsing an IP header"""
     pck = IP(src="192.168.2.1", dst="192.168.2.2")
     data = bytearray(pck.build())
     # now data is:
@@ -23,6 +27,7 @@ def test_ip_parse():
 
 
 def test_ip_build():
+    """Test building an IP header"""
     pck = IP(src="192.168.2.1", dst="192.168.2.2", ttl=255)
     data = bytearray(pck.build())
     iph = IPInfo(
@@ -35,6 +40,7 @@ def test_ip_build():
 
 
 def test_parse_tcp():
+    """Test parsing a TCP header"""
     pck = (
         IP(src="192.168.2.1", dst="192.168.2.2") /
         TCP(sport=1234, dport=80, ack=123, seq=456, flags=2)
@@ -51,6 +57,7 @@ def test_parse_tcp():
 
 
 def test_tcp_build():
+    """Test building a TCP header"""
     pck = (
         IP(src="192.168.2.1", dst="192.168.2.2", ttl=255) /
         TCP(sport=1234, dport=80, ack=123, seq=456, flags=2)

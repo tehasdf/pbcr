@@ -1,6 +1,9 @@
+"""TCP stack implementation
+
+This implements the TCP-related networking and proxying.
+"""
 import asyncio
 import enum
-import socket
 import threading
 import typing as t
 
@@ -11,6 +14,7 @@ from pbcr.networking.utils import checksum
 
 
 class TCPFlags(enum.IntEnum):
+    """TCP flags for the flags field in the TCP header"""
     FIN = 0x01
     SYN = 0x02
     RST = 0x04
@@ -24,6 +28,7 @@ class TCPFlags(enum.IntEnum):
 
 @dataclass
 class TCPInfo:
+    """TCP header information"""
     sport: int
     dport: int
     seq: int
@@ -32,6 +37,7 @@ class TCPInfo:
 
     @classmethod
     def parse(cls, iph: IPInfo, data: bytearray) -> tuple[t.Self, bytearray]:
+        """Parse TCP header from data"""
         pseudo_iph = bytearray([
             *iph.src,
             *iph.dst,
@@ -54,6 +60,7 @@ class TCPInfo:
         dst_ip: bytes,
         data: bytearray,
     ) -> bytearray:
+        """Build TCP header"""
         tcph = bytearray([
             *int.to_bytes(self.sport, 2, "big"),
             *int.to_bytes(self.dport, 2, "big"),
@@ -79,6 +86,7 @@ class TCPInfo:
         return tcph
 
 class TCPState(enum.Enum):
+    """TCP state for the state field in the TCP Control Block"""
     LISTEN = enum.auto()
     SYN_SENT = enum.auto()
     SYN_RECEIVED = enum.auto()
@@ -95,7 +103,7 @@ class TCPState(enum.Enum):
 @dataclass
 class _TCB:
     """TCP Control Block - tracks state for a TCP connection
-    
+
     Attributes:
         src_ip: Source IP address
         dst_ip: Destination IP address
@@ -116,6 +124,7 @@ class _TCB:
         proxy_reader: asyncio.StreamReader for proxy connection
         proxy_writer: asyncio.StreamWriter for proxy connection
     """
+    # pylint: disable=too-many-instance-attributes
     src_ip: bytes
     dst_ip: bytes
     src_port: int
@@ -140,10 +149,15 @@ class _TCB:
 
     @property
     def key(self) -> tuple:
+        """Key for this connection
+
+        Use this for hashmaps
+        """
         return (bytes(self.src_ip), self.src_port, bytes(self.dst_ip), self.dst_port)
 
 
 class TCPStack:
+    """TCP stack implementation"""
     def __init__(self, writer: t.Callable[[bytearray], None]):
         self.writer = writer
         self._tcb = {}
@@ -151,6 +165,7 @@ class TCPStack:
         self.thread = None
 
     def start(self):
+        """Start the TCP stack"""
         self.thread = threading.Thread(
             target=self._run,
             daemon=True,
@@ -166,6 +181,7 @@ class TCPStack:
         tcph: TCPInfo,
         data: bytearray,
     ):
+        """Handle incoming TCP packet"""
         self._loop.call_soon_threadsafe(
             lambda: self._loop.create_task(
                 self._do_handle(iph, tcph, data)
@@ -177,7 +193,7 @@ class TCPStack:
         """Get TCB for this connection, creating if needed"""
         key = (bytes(iph.src), tcph.dport, bytes(iph.dst), tcph.sport)
         if key not in self._tcb:
-            if not (tcph.flags & TCPFlags.SYN):
+            if not tcph.flags & TCPFlags.SYN:
                 # Only create new TCB on SYN
                 return None
             # Initialize new TCB
@@ -203,24 +219,26 @@ class TCPStack:
 
     def _build_response(
         self,
-        iph: IPInfo,
-        tcph: TCPInfo,
         tcb: _TCB,
         flags: int,
         data: bytearray = bytearray(),
     ) -> bytearray:
         """Build a TCP response packet"""
         return IPInfo(
-            src=iph.dst,
-            dst=iph.src,
+            src=tcb.dst_ip,
+            dst=tcb.src_ip,
             proto=6,
         ).build(20 + len(data)) + TCPInfo(
-            sport=tcph.dport,
-            dport=tcph.sport,
+            dport=tcb.dst_port,
+            sport=tcb.src_port,
             seq=tcb.snd_nxt,
             ack=tcb.rcv_nxt,
             flags=flags,
-        ).build(iph.dst, iph.src, data)
+        ).build(
+            tcb.dst_ip,
+            tcb.src_ip,
+            data,
+        )
 
     def _send_response(self, response: bytearray, tcb: _TCB):
         """Send a response and update sequence number if needed"""
@@ -230,17 +248,13 @@ class TCPStack:
 
     async def _handle_listen_state(
         self,
-        iph: IPInfo,
         tcph: TCPInfo,
         tcb: _TCB,
-        data: bytearray,
     ):
         """Handle SYN packet in LISTEN state"""
         if tcph.flags & TCPFlags.SYN:
             tcb.state = TCPState.SYN_RECEIVED
 
-            print('host', socket.inet_ntoa(iph.dst))
-            print('port', tcph.dport)
             reader, writer = await asyncio.open_connection(
                 host='localhost',
                 port=8000,
@@ -248,26 +262,26 @@ class TCPStack:
             tcb.proxy_reader = reader
             tcb.proxy_writer = writer
             response = self._build_response(
-                iph, tcph, tcb, TCPFlags.ACK | TCPFlags.SYN)
+                tcb, TCPFlags.ACK | TCPFlags.SYN)
             self._send_response(response, tcb)
 
     async def _handle_syn_received_state(
         self,
-        iph: IPInfo,
         tcph: TCPInfo,
         tcb: _TCB,
-        data: bytearray,
     ):
         """Handle ACK packet in SYN_RECEIVED state"""
         if tcph.flags & TCPFlags.ACK:
             tcb.state = TCPState.ESTABLISHED
-            print(f'Connection established: {iph.src}:{tcph.sport} -> {iph.dst}:{tcph.dport}')
+            print(
+                f'Connection established: {tcb.src_ip}:{tcb.src_port} '
+                f'-> {tcb.dst_ip}:{tcb.dst_port}'
+            )
             # Start background task to read from proxy
-            asyncio.create_task(self._proxy_reader_task(tcb, iph, tcph))
+            asyncio.create_task(self._proxy_reader_task(tcb))
 
     async def _handle_established_state(
         self,
-        iph: IPInfo,
         tcph: TCPInfo,
         tcb: _TCB,
         data: bytearray,
@@ -275,12 +289,11 @@ class TCPStack:
         """Handle packets in ESTABLISHED state"""
         if tcph.flags & TCPFlags.FIN:
             tcb.state = TCPState.CLOSE_WAIT
-            response = self._build_response(iph, tcph, tcb, TCPFlags.ACK)
+            response = self._build_response(tcb, TCPFlags.ACK)
             self._send_response(response, tcb)
         elif tcph.flags & TCPFlags.ACK:
             tcb.rcv_nxt = tcph.seq + len(data)
-            response = self._build_response(
-                iph, tcph, tcb, TCPFlags.ACK)
+            response = self._build_response(tcb, TCPFlags.ACK)
             self._send_response(response, tcb)
             if data:
                 if tcb.proxy_writer:
@@ -289,22 +302,17 @@ class TCPStack:
 
     async def _handle_close_wait_state(
         self,
-        iph: IPInfo,
-        tcph: TCPInfo,
+        _tcph: TCPInfo,
         tcb: _TCB,
-        data: bytearray,
     ):
         """Handle CLOSE_WAIT state - send FIN"""
         tcb.state = TCPState.LAST_ACK
-        response = self._build_response(
-            iph, tcph, tcb, TCPFlags.FIN | TCPFlags.ACK)
+        response = self._build_response(tcb, TCPFlags.FIN | TCPFlags.ACK)
         self._send_response(response, tcb)
 
     async def _proxy_reader_task(
         self,
         tcb: _TCB,
-        iph: IPInfo,
-        tcph: TCPInfo,
     ):
         """Background task that reads from proxy connection and forwards data"""
         try:
@@ -312,37 +320,37 @@ class TCPStack:
                 data = await tcb.proxy_reader.read(8192)
                 if not data:
                     # Connection closed by remote
-                    response = self._build_response(
-                        iph, tcph, tcb, TCPFlags.FIN | TCPFlags.ACK)
+                    response = self._build_response(tcb, TCPFlags.FIN | TCPFlags.ACK)
                     self._send_response(response, tcb)
                     tcb.state = TCPState.LAST_ACK
                     break
 
                 # Forward data to client
                 response = self._build_response(
-                    iph, tcph, tcb, TCPFlags.ACK | TCPFlags.PSH, bytearray(data))
+                    tcb, TCPFlags.ACK | TCPFlags.PSH, bytearray(data))
                 self._send_response(response, tcb)
                 tcb.snd_nxt += len(data)
 
-        except Exception as e:
-            print(f"Proxy reader error: {e}")
-            response = self._build_response(
-                iph, tcph, tcb, TCPFlags.FIN | TCPFlags.ACK)
+        except Exception as exc:
+            print(f"Proxy reader error: {exc}")
+            response = self._build_response(tcb, TCPFlags.FIN | TCPFlags.ACK)
             self._send_response(response, tcb)
             tcb.state = TCPState.LAST_ACK
+            raise
 
     async def _handle_last_ack_state(
         self,
-        iph: IPInfo,
         tcph: TCPInfo,
         tcb: _TCB,
-        data: bytearray,
     ):
         """Handle LAST_ACK state - final ACK"""
         if tcph.flags & TCPFlags.ACK:
             tcb.state = TCPState.CLOSED
             del self._tcb[tcb.key]
-            print(f'Connection closed: {iph.src}:{tcph.sport} -> {iph.dst}:{tcph.dport}')
+            print(
+                f'Connection closed: {tcb.src_ip}:{tcb.src_port} '
+                f'-> {tcb.dst_ip}:{tcb.dst_port}'
+            )
 
     async def _do_handle(
         self,
@@ -358,11 +366,11 @@ class TCPStack:
         handlers = {
             TCPState.LISTEN: self._handle_listen_state,
             TCPState.SYN_RECEIVED: self._handle_syn_received_state,
-            TCPState.ESTABLISHED: self._handle_established_state,
             TCPState.CLOSE_WAIT: self._handle_close_wait_state,
             TCPState.LAST_ACK: self._handle_last_ack_state,
         }
 
+        if tcb.state == TCPState.ESTABLISHED:
+            await self._handle_established_state(tcph, tcb, data)
         if handler := handlers.get(tcb.state):
-            await handler(iph, tcph, tcb, data)
-
+            await handler(tcph, tcb)

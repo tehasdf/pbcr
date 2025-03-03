@@ -25,7 +25,6 @@ from pbcr.types import (
 from pbcr.networking import (
     IPInfo,
     TCPInfo,
-    TCPFlags,
     get_process_net_fd,
     TCPStack,
 )
@@ -213,6 +212,8 @@ def run_command(
     cfg: ContainerConfig,
 ):
     """The CLI command that runs a container"""
+    # this has to be fixed later
+    # pylint: disable=too-many-locals
     container_name = cfg.container_name or str(uuid.uuid4())
     img = _choose_image(image_storage, cfg.image_name)
 
@@ -270,11 +271,15 @@ def run_command(
                 uidmapper.newgidmap(barrier.other_pid, container_gids)
 
             if barrier.other_pid is not None:
-                fd = get_process_net_fd(barrier.other_pid)
+                net_fd = get_process_net_fd(barrier.other_pid)
                 barrier.signal()
-                ff = os.fdopen(fd, "r+b", buffering=0)
-                t = threading.Thread(target=_reader, args=(ff,), daemon=True)
-                t.start()
+                reader_fd = os.fdopen(net_fd, "r+b", buffering=0)
+                reader_thread = threading.Thread(
+                    target=_reader,
+                    args=(reader_fd,),
+                    daemon=True,
+                )
+                reader_thread.start()
             if not cfg.daemon:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -287,14 +292,13 @@ def run_command(
                 sys.exit(retcode)
 
 
-def _reader(ff):
-    tcp = TCPStack(ff.write)
+def _reader(reader_fd):
+    tcp = TCPStack(reader_fd.write)
     tcp.start()
     while True:
-        data = bytearray(ff.read(8192))
+        data = bytearray(reader_fd.read(8192))
 
         iph, data = IPInfo.parse(data)
         if iph.proto == 6:  # tcp
             tcph, data = TCPInfo.parse(iph, data)
             tcp.handle_packet(iph, tcph, data)
- 

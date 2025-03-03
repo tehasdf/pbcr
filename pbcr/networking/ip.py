@@ -1,3 +1,5 @@
+"""IP header handling"""
+
 import typing as t
 
 from dataclasses import dataclass
@@ -7,11 +9,13 @@ from pbcr.networking.utils import checksum
 
 @dataclass
 class IPInfo:
+    """IP header information"""
     src: bytes
     dst: bytes
     proto: int
 
     def build(self, datalen: int) -> bytearray:
+        """Build the IP header"""
         ipver = 4
         ihl = 5
         ident = 1
@@ -35,6 +39,7 @@ class IPInfo:
 
     @classmethod
     def parse(cls, data: bytearray) -> tuple[t.Self, bytearray]:
+        """Parse an IP header"""
         ihl = (data[0] & 0x0F) * 4
         if checksum(data[:ihl]) != 0:
             raise ValueError("Invalid checksum")

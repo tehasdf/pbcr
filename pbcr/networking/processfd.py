@@ -1,3 +1,5 @@
+"""Utilities for getting a process' network FD"""
+
 import array
 import fcntl
 import socket
@@ -9,12 +11,14 @@ from pbcr.forkbarrier import ForkBarrier
 
 
 def get_process_net_fd(pid) -> int:
-
+    """Get the network FD for a process"""
+    # at some point we'll need to refactor this function
+    # pylint: disable=too-many-locals
     left_sock, right_sock = socket.socketpair()
     with ForkBarrier() as barrier:
         if barrier.is_child:
-            with open(f'/proc/{pid}/ns/user') as userns_file, \
-                    open(f'/proc/{pid}/ns/net') as netns_file:
+            with open(f'/proc/{pid}/ns/user', 'rb') as userns_file, \
+                    open(f'/proc/{pid}/ns/net', 'rb') as netns_file:
 
                 libc.setns(
                     int(userns_file.fileno()),
@@ -27,17 +31,17 @@ def get_process_net_fd(pid) -> int:
 
             dev_name = b'tap0'
             ifreq = struct.pack(
-                "{}sH".format(libc.IFNAMSIZ),
+                f"{libc.IFNAMSIZ}sH",
                 dev_name,
                 libc.IFF_TUN | libc.IFF_NO_PI,
             )
-            fd = open("/dev/net/tun", "r+b", buffering=0)
-            fcntl.ioctl(fd, libc.TUNSETIFF, ifreq)
+            tun_fd = open("/dev/net/tun", "r+b", buffering=0)  # pylint: disable=consider-using-with
+            fcntl.ioctl(tun_fd, libc.TUNSETIFF, ifreq)
 
             lo_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock_fd = lo_sock.fileno()
             lo_ifreq = struct.pack(
-                "{}sH".format(libc.IFNAMSIZ),
+                f"{libc.IFNAMSIZ}sH",
                 b'lo',
                 libc.IFF_UP | libc.IFF_RUNNING,
             )
@@ -47,7 +51,7 @@ def get_process_net_fd(pid) -> int:
                 sock_fd,
                 libc.SIOCSIFFLAGS,
                 struct.pack(
-                    "{}sH".format(libc.IFNAMSIZ),
+                    f"{libc.IFNAMSIZ}sH",
                     dev_name,
                     libc.IFF_UP | libc.IFF_RUNNING,
                 )
@@ -73,7 +77,7 @@ def get_process_net_fd(pid) -> int:
                     (
                         socket.SOL_SOCKET,
                         socket.SCM_RIGHTS,
-                        struct.pack('i', fd.fileno())
+                        struct.pack('i', tun_fd.fileno())
                     )
                 ],
             )

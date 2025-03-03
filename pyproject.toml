@@ -22,6 +22,7 @@ test = [
     "pytest-cov",
     "pylint",
     "mypy",
+    "scapy",
 ]
 
 [tool.pytest.ini_options]

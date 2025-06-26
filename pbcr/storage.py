@@ -33,8 +33,11 @@ class FileImageStorage:
     def list_images(self) -> list[Manifest]:
         """Return stored images"""
         images_path = self._base / 'images.json'
-        with images_path.open('r') as images_file:
-            images = json.load(images_file)
+        try:
+            with images_path.open('r') as images_file:
+                images = json.load(images_file)
+        except (ValueError, IOError):
+            images = {}
         return [Manifest(**img) for img in images.values()]
 
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:

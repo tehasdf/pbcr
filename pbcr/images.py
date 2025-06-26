@@ -2,14 +2,59 @@
 """
 
 from pbcr.docker_registry import pull_image_from_docker
-from pbcr.types import ImageStorage
+from pbcr.types import ImageStorage, Manifest
+
+
+def _format_images_table(images: list[Manifest]) -> str:
+    """Format a list of images into a nice table"""
+    if not images:
+        return "No images found."
+    
+    # Define headers and calculate column widths
+    headers = ["REPOSITORY", "REGISTRY", "DIGEST", "LAYERS"]
+    
+    # Extract data for each image
+    rows = []
+    for image in images:
+        # Truncate digest to first 12 characters for readability  
+        short_digest = str(image.digest).replace('sha256:', '')[:12]
+        layer_count = str(len(image.layers))
+        
+        rows.append([
+            image.name,
+            image.registry, 
+            short_digest,
+            layer_count
+        ])
+    
+    # Calculate column widths
+    col_widths = [len(header) for header in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(cell))
+    
+    # Add padding
+    col_widths = [w + 2 for w in col_widths]
+    
+    # Build the table
+    lines = []
+    
+    # Header row
+    header_line = "".join(headers[i].ljust(col_widths[i]) for i in range(len(headers)))
+    lines.append(header_line.rstrip())
+    
+    # Data rows
+    for row in rows:
+        data_line = "".join(row[i].ljust(col_widths[i]) for i in range(len(row)))
+        lines.append(data_line.rstrip())
+    
+    return "\n".join(lines)
 
 
 def list_images_command(storage: ImageStorage):
     """Display images in the storage"""
     images = storage.list_images()
-    for image in images:
-        print(image)
+    print(_format_images_table(images))
 
 
 def pull_image(storage: ImageStorage, image_name: str):

@@ -13,9 +13,9 @@ def test_format_images_table_empty():
 def test_format_images_table_single():
     """Test formatting single image"""
     manifest = Manifest(
-        registry="docker.io",
-        name="library/hello-world",
-        digest=Digest("sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"),
+        registry="registry1.com",
+        name="foo",
+        digest=Digest("sha256:abc123def456789012345678901234567890123456789012345678901234567890"),
         config=(Digest("sha256:config123"), "application/vnd.docker.image.manifest.v2+json"),
         layers=[
             (Digest("sha256:layer1"), "application/vnd.docker.image.rootfs.diff.tar.gzip"),
@@ -33,9 +33,9 @@ def test_format_images_table_single():
     assert "LAYERS" in lines[0]
 
     # Check data row
-    assert "library/hello-world" in lines[1]
-    assert "docker.io" in lines[1]
-    assert "abcd12345678" in lines[1]  # First 12 chars of digest
+    assert "foo" in lines[1]
+    assert "registry1.com" in lines[1]
+    assert "abc123def456" in lines[1]  # First 12 chars of digest
     assert "2" in lines[1]  # Number of layers
 
 
@@ -43,10 +43,10 @@ def test_format_images_table_multiple():
     """Test formatting multiple images"""
     manifests = [
         Manifest(
-            registry="docker.io",
-            name="library/hello-world",
+            registry="registry1.com",
+            name="foo",
             digest=Digest(
-                "sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+                "sha256:abc123def456789012345678901234567890123456789012345678901234567890"
             ),
             config=(Digest("sha256:config123"), "application/vnd.docker.image.manifest.v2+json"),
             layers=[
@@ -54,10 +54,10 @@ def test_format_images_table_multiple():
             ]
         ),
         Manifest(
-            registry="quay.io",
-            name="prometheus/prometheus",
+            registry="registry2.com",
+            name="bar",
             digest=Digest(
-                "sha256:efgh5678901234567890efgh5678901234567890efgh5678901234567890efgh"
+                "sha256:def456ghi789012345678901234567890123456789012345678901234567890def"
             ),
             config=(Digest("sha256:config456"), "application/vnd.docker.image.manifest.v2+json"),
             layers=[
@@ -81,13 +81,13 @@ def test_format_images_table_multiple():
     assert "LAYERS" in lines[0]
 
     # Check first data row
-    assert "library/hello-world" in lines[1]
-    assert "docker.io" in lines[1]
-    assert "abcd12345678" in lines[1]
+    assert "foo" in lines[1]
+    assert "registry1.com" in lines[1]
+    assert "abc123def456" in lines[1]
     assert "1" in lines[1]
 
     # Check second data row
-    assert "prometheus/prometheus" in lines[2]
-    assert "quay.io" in lines[2]
-    assert "efgh56789012" in lines[2]
+    assert "bar" in lines[2]
+    assert "registry2.com" in lines[2]
+    assert "def456ghi789" in lines[2]
     assert "3" in lines[2]

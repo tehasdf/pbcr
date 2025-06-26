@@ -7,7 +7,7 @@ import pathlib
 import typing
 from datetime import datetime, timedelta, timezone
 
-from dataclasses import dataclass, asdict, field, fields
+from dataclasses import dataclass, asdict, field
 
 
 Digest = typing.NewType('Digest', str)
@@ -76,7 +76,7 @@ class Manifest:
         return asdict(self)
 
 
-@dataclass(init=False)
+@dataclass
 class ImageConfig:
     """An OCI image config.
 
@@ -85,16 +85,11 @@ class ImageConfig:
     The other part of an OCI image, that are usually bundled together
     with ImageConfig, are FS layers.
     """
-    architecture: str
-    config: dict[str, typing.Any]
-    history: list[dict]
-
-    def __init__(self, **kwargs):
-        # ignore additional passed-in fields
-        attrs = {f.name for f in fields(self)}
-        for k, val in kwargs.items():
-            if k in attrs:
-                setattr(self, k, val)
+    architecture: str = "amd64"
+    os: str = "linux"  # pylint: disable=invalid-name
+    config: dict[str, typing.Any] = field(default_factory=dict)
+    rootfs: dict[str, typing.Any] = field(default_factory=dict)
+    history: list[dict[str, typing.Any]] = field(default_factory=list)
 
     def asdict(self):
         """Serialize the ImageConfig"""
@@ -137,9 +132,11 @@ class ImageStorage(typing.Protocol):
 
         If there is no PullToken for that target stored, return None.
         """
+        raise NotImplementedError
 
     def store_pull_token(self, registry: str, repo: str, token: PullToken):
         """Store up a PullToken for the given registry + repo"""
+        raise NotImplementedError
 
     def list_images(self) -> list[Manifest]:
         """Return all Images in this storage"""
@@ -149,12 +146,15 @@ class ImageStorage(typing.Protocol):
         self, registry: str, repo: str,
     ) -> Manifest | None:
         """Return the Manifest of the specified image, or None"""
+        raise NotImplementedError
 
     def store_manifest(self, manifest: Manifest):
         """Store an OCI image Manifest"""
+        raise NotImplementedError
 
     def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
         """Get the ImageConfig for the image described by the Manifest"""
+        raise NotImplementedError
 
     def store_image_config(
         self,
@@ -162,11 +162,13 @@ class ImageStorage(typing.Protocol):
         config: ImageConfig,
     ):
         """Store the ImageConfig for the image described by the Manifest"""
+        raise NotImplementedError
 
     def get_image_layer(
         self, manifest: Manifest, digest: Digest,
     ) -> ImageLayer | None:
         """Layer from the image selected by Manifest, with the given digest"""
+        raise NotImplementedError
 
     def store_image_layer(
         self,
@@ -188,12 +190,15 @@ class ContainerStorage(typing.Protocol):
 
     def get_container(self, container_id: str) -> Container | None:
         """Look up a container by its name"""
+        raise NotImplementedError
 
     def store_container(self, container: Container):
         """Store the container"""
+        raise NotImplementedError
 
     def remove_container(self, container: Container):
         """Remove the container from storage"""
+        raise NotImplementedError
 
     def list_containers(self) -> list[Container]:
         """List all containers in storage"""

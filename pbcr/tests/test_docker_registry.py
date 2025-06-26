@@ -299,7 +299,7 @@ def test_pull_image_from_docker(
     mock_get_layers, mock_get_config, mock_get_manifest, mock_find_digest,
     mock_get_token, mock_storage, mock_manifest, mock_config
 ):
-    # pylint: disable=too-many-arguments, unused-argument
+    # pylint: disable=too-many-arguments, too-many-positional-arguments, unused-argument
     """Test the main pull_image_from_docker function."""
     mock_get_token.return_value = PullToken(
         token="test_token",
@@ -329,7 +329,7 @@ def test_load_docker_image(
     mock_get_layers, mock_get_config, mock_get_manifest,
     mock_storage, mock_manifest, mock_config
 ):
-    # pylint: disable=too-many-arguments, unused-argument
+    # pylint: disable=too-many-arguments, too-many-positional-arguments, unused-argument
     """Test the load_docker_image function."""
     mock_get_manifest.return_value = mock_manifest
     mock_get_config.return_value = mock_config

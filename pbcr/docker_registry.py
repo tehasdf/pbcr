@@ -27,7 +27,14 @@ def _get_pull_token(storage: ImageStorage, repo: str) -> PullToken:
         timeout=10,
     )
     token_data = resp.json()
-    token_data['issued_at'] = token_data['issued_at'][:-4]
+    # The 'issued_at' timestamp from Docker Hub API sometimes includes
+    # microseconds which are not always handled consistently by datetime.fromisoformat.
+    # Truncate to milliseconds and append 'Z' for UTC to ensure proper ISO 8601 format.
+    if 'issued_at' in token_data and '.' in token_data['issued_at']:
+        token_data['issued_at'] = token_data['issued_at'].split('.')[0] + 'Z'
+    elif 'issued_at' in token_data and not token_data['issued_at'].endswith('Z'):
+        token_data['issued_at'] += 'Z'
+
     token = PullToken.fromdict(token_data)
 
     storage.store_pull_token(registry='docker.io', repo=repo, token=token)
@@ -160,7 +167,14 @@ def _get_image_config(
     )
 
     config_data = config_resp.json()
-    image_config = ImageConfig(**config_data)
+    # Ensure all required fields for ImageConfig are present, providing defaults if missing
+    image_config = ImageConfig(
+        architecture=config_data.get('architecture', ''),
+        os=config_data.get('os', ''),
+        config=config_data.get('config', {}),
+        rootfs=config_data.get('rootfs', {}),
+        history=config_data.get('history', []),
+    )
     storage.store_image_config(manifest, image_config)
     return image_config
 

@@ -1,6 +1,4 @@
 """File storage tests"""
-from pathlib import Path
-
 from pbcr.storage import FileImageStorage
 
 

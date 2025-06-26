@@ -28,8 +28,8 @@ def _setup_network_namespaces(pid: int) -> None:
     """
     with open(f'/proc/{pid}/ns/user', 'rb') as userns_file, \
             open(f'/proc/{pid}/ns/net', 'rb') as netns_file:
-        libc.setns(int(userns_file.fileno()), libc.CLONE_NEWUSER)
-        libc.setns(int(netns_file.fileno()), libc.CLONE_NEWNET)
+        libc.setns(userns_file.fileno(), libc.CLONE_NEWUSER)
+        libc.setns(netns_file.fileno(), libc.CLONE_NEWNET)
 
 
 def _create_tun_device(config: NetworkConfig) -> int:

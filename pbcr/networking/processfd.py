@@ -113,7 +113,7 @@ def _child_process_operations(
         [(socket.SOL_SOCKET, socket.SCM_RIGHTS, struct.pack('i', tun_fd.fileno()))]
     )
     barrier.wait()
-    sys.exit(0)
+    os._exit(0)
 
 def get_process_net_fd(pid: int, config: NetworkConfig = None) -> int:
     """Get the network file descriptor for a process.

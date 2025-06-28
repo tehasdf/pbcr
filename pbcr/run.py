@@ -1,6 +1,5 @@
 """Commands and utilities for running a container"""
 
-import json
 import os
 import pathlib
 import pwd
@@ -21,6 +20,7 @@ from pbcr.types import (
     Container,
     Image,
     ContainerConfig,
+    ImageConfig,
 )
 from pbcr.networking import (
     IPInfo,
@@ -143,60 +143,9 @@ class _ContainerFS:
         subprocess.call(['/bin/rm', '-rf', str(self.container_dir)])
 
 
-def _find_ids(source_path) -> list[str]:
-    ids = []
-    try:
-        with (source_path).open() as source_file:
-            for line in source_file:
-                parts = line.split(':')
-                ids.append(parts[2])
-    except IOError:
-        pass
-    return ids
-
-
-def _get_container_spec(container_fs: _ContainerFS, uidmapper: _UIDMapper):
-    evt = threading.Event()
-    ids_storage_path = container_fs.container_dir / 'container.json'
-    signal.signal(signal.SIGUSR1, lambda *_: evt.set())
-
-    with ForkBarrier() as barrier:
-        if barrier.is_child:
-            libc.unshare(
-                libc.CLONE_NEWUSER |
-                libc.CLONE_NEWCGROUP |
-                libc.CLONE_NEWNS |
-                libc.CLONE_NEWNET,
-            )
-            barrier.signal()
-            barrier.wait()
-            container_fs.mount()
-
-            container = {
-                'uids': _find_ids(
-                    container_fs.container_chroot / 'etc/passwd'),
-                'gids': _find_ids(
-                    container_fs.container_chroot / 'etc/group')
-            }
-            with ids_storage_path.open('w') as container_file:
-                json.dump(container, container_file)
-
-            barrier.signal()
-            sys.exit(0)
-        else:
-            barrier.wait()
-
-            if barrier.other_pid is not None:
-                uidmapper.newuidmap(barrier.other_pid, [])
-                uidmapper.newgidmap(barrier.other_pid, [])
-
-            barrier.signal()
-            barrier.wait()
-
-            with ids_storage_path.open() as container_file:
-                container_data = json.load(container_file)
-
-            return container_data['uids'], container_data['gids']
+def _get_container_spec_from_image(image_config: ImageConfig) -> tuple[list[str], list[str]]:
+    """Get container UIDs and GIDs from pre-computed image configuration"""
+    return image_config.uids, image_config.gids
 
 
 def _choose_image(storage: ImageStorage, image_name: str) -> Image:
@@ -243,8 +192,7 @@ def run_command(
             command = command[1:]
         to_run = entrypoint + command
 
-    container_uids, container_gids = _get_container_spec(
-        container_fs, uidmapper)
+    container_uids, container_gids = _get_container_spec_from_image(img.config)
 
     with ForkBarrier() as barrier:
         if barrier.is_child:

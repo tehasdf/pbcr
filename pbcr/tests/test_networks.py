@@ -93,7 +93,7 @@ def test_tcp_build():
 
 
 @pytest.mark.skipif(
-    bool(os.environ.get("CI")),
+    os.environ.get("CI") == "true",
     reason="Integration test, requires connectivity",
 )
 def test_container_can_reach_http_server(tmp_path: pathlib.Path):

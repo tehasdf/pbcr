@@ -81,7 +81,7 @@ class TCPInfo:
             *int.to_bytes(len(tcph), 2, "big"),
         ])
         chck = checksum(pseudo_iph + tcph)
-        tcph[16:18] = int.to_bytes(chck, 2, "little")
+        tcph[16:18] = int.to_bytes(chck, 2, "big")
 
         return tcph
 

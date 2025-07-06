@@ -34,15 +34,16 @@ class IPInfo:
             *self.dst,
         ])
         chck = checksum(iph)
-        iph[10:12] = int.to_bytes(chck, 2, "little")
+        iph[10:12] = int.to_bytes(chck, 2, "big")
         return iph
 
     @classmethod
     def parse(cls, data: bytearray) -> tuple[t.Self, bytearray]:
         """Parse an IP header"""
         ihl = (data[0] & 0x0F) * 4
-        if checksum(data[:ihl]) != 0:
-            raise ValueError("Invalid checksum")
+        cksum = checksum(data[:ihl])
+        if cksum not in (0, 0xffff):
+            raise ValueError(f"Invalid checksum: {hex(cksum)}")
         hdr = cls(
             src=bytes(data[12:16]),
             dst=bytes(data[16:20]),

@@ -44,13 +44,17 @@ class MockImageStorage:
         """Mock store_pull_token."""
         self.tokens[(registry, repo)] = token
 
-    def get_manifest(self, registry, repo):
+    def get_manifest(self, registry, repo, reference=None):
         """Mock get_manifest."""
-        return self.manifests.get((registry, repo))
+        return self.manifests.get((registry, repo, reference))
 
-    def store_manifest(self, manifest):
+    def store_manifest(self, manifest, tags=None):
         """Mock store_manifest."""
-        self.manifests[(manifest.registry, manifest.name)] = manifest
+        if tags:
+            tag = tags[0]
+        else:
+            tag = None
+        self.manifests[(manifest.registry, manifest.name, tag)] = manifest
 
     def get_image_config(self, manifest):
         """Mock get_image_config."""
@@ -197,9 +201,9 @@ def test_find_image_digest_not_found(mock_get_request, mock_token):
 
 def test_get_image_manifest_cached(mock_storage, mock_manifest):
     """Test retrieving a cached image manifest."""
-    mock_storage.store_manifest(mock_manifest)
+    mock_storage.store_manifest(mock_manifest, tags=["latest"])
 
-    manifest = _get_image_manifest(mock_storage, "library/ubuntu")
+    manifest = _get_image_manifest(mock_storage, "library/ubuntu", "latest")
 
     assert manifest == mock_manifest
 
@@ -208,29 +212,42 @@ def test_get_image_manifest_cached(mock_storage, mock_manifest):
 def test_get_image_manifest_fetch(mock_get_request, mock_storage, mock_token):
     """Test fetching an image manifest from the registry."""
     mock_response = mock.Mock()
-    mock_response.json.return_value = {
-        "config": {
-            "digest": "sha256:config123",
-            "mediaType": "application/vnd.docker.container.image.v1+json"
+    mock_response.json.side_effect = [
+        # /manifests/tag response (manifest list)
+        {
+            "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+            "manifests": [
+                {
+                    "digest": "sha256:abc123",
+                    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                    "platform": {"architecture": "amd64"}
+                }
+            ]
         },
-        "layers": [
-            {
-                "digest": "sha256:layer1",
-                "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+        # /manifests/digest response
+        {
+            "config": {
+                "digest": "sha256:config123",
+                "mediaType": "application/vnd.docker.container.image.v1+json"
             },
-            {
-                "digest": "sha256:layer2",
-                "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
-            }
-        ]
-    }
+            "layers": [
+                {
+                    "digest": "sha256:layer1",
+                    "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+                },
+                {
+                    "digest": "sha256:layer2",
+                    "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+                }
+            ]
+        },
+    ]
     mock_get_request.return_value = mock_response
 
     manifest = _get_image_manifest(
         mock_storage,
         "library/ubuntu",
-        Digest("sha256:abc123"),
-        MediaType("application/vnd.docker.distribution.manifest.v2+json"),
+        "latest",
         mock_token
     )
 
@@ -239,7 +256,7 @@ def test_get_image_manifest_fetch(mock_get_request, mock_storage, mock_token):
     assert manifest.digest == "sha256:abc123"
     assert manifest.config[0] == "sha256:config123"
     assert len(manifest.layers) == 2
-    assert mock_storage.get_manifest("docker.io", "library/ubuntu") == manifest
+    assert mock_storage.get_manifest("docker.io", "library/ubuntu", "latest") == manifest
 
 
 def test_get_image_config_cached(mock_storage, mock_manifest, mock_config):

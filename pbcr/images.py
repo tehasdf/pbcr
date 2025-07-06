@@ -2,28 +2,26 @@
 """
 
 from pbcr.docker_registry import pull_image_from_docker
-from pbcr.types import ImageStorage, Manifest
+from pbcr.types import ImageStorage, ImageSummary
 
 
-def _format_images_table(images: list[Manifest]) -> str:
+def _format_images_table(images: list[ImageSummary]) -> str:
     """Format a list of images into a nice table"""
     if not images:
         return "No images found."
 
     # Define headers and calculate column widths
-    headers = ["REPOSITORY", "REGISTRY", "DIGEST", "LAYERS"]
+    headers = ["REPOSITORY", "REGISTRY", "DIGEST"]
     # Extract data for each image
     rows = []
     for image in images:
         # Truncate digest to first 12 characters for readability
         short_digest = str(image.digest).replace('sha256:', '')[:12]
-        layer_count = str(len(image.layers))
 
         rows.append([
             image.name,
             image.registry,
             short_digest,
-            layer_count
         ])
     # Calculate column widths
     col_widths = [len(header) for header in headers]

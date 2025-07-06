@@ -18,5 +18,7 @@ jobs:
       run: |
         pip install -e '.[test]'
     - name: Run pytest
+      env:
+        CI: "true"
       run: |
-        CI=true python -m pytest pbcr/tests/ -v
+        python -m pytest pbcr/tests/ -v

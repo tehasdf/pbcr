@@ -210,7 +210,7 @@ def run_command(
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
     cfg: ContainerConfig,
-):
+    ) -> int:
     """The CLI command that runs a container"""
     # this has to be fixed later
     # pylint: disable=too-many-locals
@@ -290,6 +290,9 @@ def run_command(
                     container_storage.remove_container(container)
                     container_fs.remove()
                 return retcode
+    raise RuntimeError(
+        "This should never happen, the container process did not exit"
+    )
 
 
 def _reader(reader_fd):

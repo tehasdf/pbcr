@@ -1,11 +1,13 @@
 """Tests for the networking module."""
 
-import socket
 import http.server
+import os
+import pathlib
+import socket
 import threading
 import time
+
 import pytest
-import pathlib
 
 from scapy.layers.inet import IP, TCP
 
@@ -90,13 +92,20 @@ def test_tcp_build():
     assert built == data
 
 
+@pytest.mark.skipif(
+    bool(os.environ.get("CI")),
+    reason="Integration test, requires connectivity",
+)
 def test_container_can_reach_http_server(tmp_path: pathlib.Path):
     """
     Integration test: Verify a container can reach an external HTTP server.
     """
     requests = 0
+
     class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
+        """A simple HTTP request handler that counts requests."""
+        def do_GET(self):  # pylint: disable=invalid-name
+            """Handle GET requests."""
             nonlocal requests
             requests += 1
             self.send_response(200)
@@ -113,12 +122,12 @@ def test_container_can_reach_http_server(tmp_path: pathlib.Path):
 
     # Start the server in a separate thread
     server_thread = threading.Thread(target=httpd.serve_forever)
-    server_thread.daemon = True  # Allow the main thread to exit even if server thread is running
+    server_thread.daemon = True
     server_thread.start()
 
     try:
         # Give the server a moment to start up
-        time.sleep(0.1) 
+        time.sleep(0.1)
 
         # Setup storage for pbcr
         image_storage = FileImageStorage.create(tmp_path / "images")
@@ -145,4 +154,3 @@ def test_container_can_reach_http_server(tmp_path: pathlib.Path):
         httpd.server_close()
         server_thread.join(timeout=1) # Wait for the thread to finish, with a timeout
     assert requests > 0, "No requests were made to the test HTTP server."
-

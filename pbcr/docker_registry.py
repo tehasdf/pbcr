@@ -28,7 +28,7 @@ def _get_pull_token(storage: ImageStorage, repo: str) -> PullToken:
     resp = requests.get(
         'https://auth.docker.io/token?service=registry.docker.io&'
         f'scope=repository:{repo}:pull',
-        timeout=10,
+        timeout=30,
     )
     resp.raise_for_status() # Raise an exception for HTTP errors
     token_data = resp.json()
@@ -61,7 +61,7 @@ def _find_image_digest(
             ]),
             'Authorization': f'Bearer {token}',
         },
-        timeout=10,
+        timeout=30,
     )
     index_response.raise_for_status() # Raise an exception for HTTP errors
     index_data = index_response.json()
@@ -110,7 +110,7 @@ def _get_image_manifest(
             'Accept': mediatype,
             'Authorization': f'Bearer {token}',
         },
-        timeout=10,
+        timeout=30,
     )
     manifest_response.raise_for_status()
     manifest_data = manifest_response.json()
@@ -149,7 +149,7 @@ def _get_image_layers(
                     'Accept': layer_mediatype,
                     'Authorization': f'Bearer {token}',
                 },
-                timeout=10,
+                timeout=30,
             )
             layer_response.raise_for_status() # Raise an exception for HTTP errors
             layer_path = storage.store_image_layer(
@@ -180,7 +180,7 @@ def _get_image_config(
             'Accept': manifest.config[1],
             'Authorization': f'Bearer {token}',
         },
-        timeout=10,
+        timeout=30,
     )
     config_resp.raise_for_status() # Raise an exception for HTTP errors
 

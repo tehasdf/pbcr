@@ -13,6 +13,7 @@ from pbcr.types import (
     ImageConfig,
     ImageLayer,
     Container,
+    ImageSummary,
 )
 
 
@@ -30,7 +31,15 @@ class FileImageStorage:
     def __init__(self, base: pathlib.Path):
         self._base = base
 
-    def list_images(self) -> list[Manifest]:
+    def _get_image_base_path(self, digest: Digest) -> pathlib.Path:
+        """Constructs the base path for a given image digest."""
+        return (
+            self._base /
+            'images' /
+            str(digest).replace('sha256:', '')
+        )
+
+    def list_images(self) -> list[ImageSummary]:
         """Return stored images"""
         images_path = self._base / 'images.json'
         try:
@@ -38,7 +47,8 @@ class FileImageStorage:
                 images = json.load(images_file)
         except (ValueError, IOError):
             images = {}
-        return [Manifest(**img) for img in images.values()]
+        # Return ImageSummary objects directly from images.json
+        return [ImageSummary(**img_summary_data) for img_summary_data in images.values()]
 
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:
         """Look up a PullToken for the given registry + repo
@@ -80,31 +90,45 @@ class FileImageStorage:
             json.dump(tokens, tokens_file, indent=4)
 
     def get_manifest(
-        self, registry: str, repo: str
+        self, registry: str, repo: str, reference: str | None = None
     ) -> Manifest | None:
         """Return the Manifest of the specified image, or None"""
-        manifest_path = (
-            self._base /
-            'images' /
-            registry /
-            repo /
-            'manifest.json'
-        )
+        images_path = self._base / 'images.json'
         try:
-            with manifest_path.open() as manifest_file:
-                return Manifest(**json.load(manifest_file))
+            with images_path.open('r') as images_file:
+                images = json.load(images_file)
         except (ValueError, IOError):
-            return None
+            images = {}
 
-    def store_manifest(self, manifest: Manifest):
+        found_digest = None
+
+        if reference and reference.startswith('sha256:'):
+            # If reference is a digest, try to find it directly
+            if reference in images:
+                img_summary = ImageSummary(**images[reference])
+                if img_summary.registry == registry and img_summary.name == repo:
+                    found_digest = img_summary.digest
+        else:
+            # Otherwise, iterate and match by registry, name, and optionally tag
+            for img_summary_data in images.values():
+                img_summary = ImageSummary(**img_summary_data)
+                if img_summary.registry == registry and img_summary.name == repo:
+                    if reference is None or reference in img_summary.tags:
+                        found_digest = img_summary.digest
+                        break
+
+        if found_digest:
+            manifest_path = self._get_image_base_path(found_digest) / 'manifest.json'
+            try:
+                with manifest_path.open('r') as manifest_file:
+                    return Manifest(**json.load(manifest_file))
+            except (ValueError, IOError):
+                return None
+        return None
+
+    def store_manifest(self, manifest: Manifest, tags: list[str] | None = None):
         """Store an OCI image Manifest"""
-        manifest_path = (
-            self._base /
-            'images' /
-            manifest.registry /
-            manifest.name /
-            'manifest.json'
-        )
+        manifest_path = self._get_image_base_path(manifest.digest) / 'manifest.json'
         if not manifest_path.parent.is_dir():
             manifest_path.parent.mkdir(parents=True)
         with manifest_path.open('w') as manifest_file:
@@ -116,20 +140,21 @@ class FileImageStorage:
                 images = json.load(images_file)
             except ValueError:
                 images = {}
-            images[manifest.digest] = manifest.asdict()
+            # Store only digest, registry, name, and tags in images.json
+            image_summary = ImageSummary(
+                digest=manifest.digest,
+                registry=manifest.registry,
+                name=manifest.name,
+                tags=tags if tags is not None else [],
+            )
+            images[str(manifest.digest)] = image_summary.asdict()
             images_file.seek(0)
             images_file.truncate()
             json.dump(images, images_file, indent=4)
 
     def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
         """Get the ImageConfig for the image described by the Manifest"""
-        config_path = (
-            self._base /
-            'images' /
-            manifest.registry /
-            manifest.name /
-            'config.json'
-        )
+        config_path = self._get_image_base_path(manifest.digest) / 'config.json'
         try:
             with config_path.open() as config_file:
                 return ImageConfig(**json.load(config_file))
@@ -138,13 +163,9 @@ class FileImageStorage:
 
     def store_image_config(self, manifest: Manifest, config: ImageConfig):
         """Store the ImageConfig for the image described by the Manifest"""
-        config_path = (
-            self._base /
-            'images' /
-            manifest.registry /
-            manifest.name /
-            'config.json'
-        )
+        config_path = self._get_image_base_path(manifest.digest) / 'config.json'
+        if not config_path.parent.is_dir():
+            config_path.parent.mkdir(parents=True)
         with config_path.open('w') as config_file:
             json.dump(config.asdict(), config_file, indent=4)
 
@@ -153,10 +174,7 @@ class FileImageStorage:
     ) -> ImageLayer | None:
         """Layer from the image selected by Manifest, with the given digest"""
         layer_path = (
-            self._base /
-            'images' /
-            manifest.registry /
-            manifest.name /
+            self._get_image_base_path(manifest.digest) /
             'layers' /
             str(digest).replace('sha256:', '')
         )
@@ -172,10 +190,7 @@ class FileImageStorage:
     ) -> pathlib.Path:
         """Store a single image FS layer"""
         layer_dir = (
-            self._base /
-            'images' /
-            manifest.registry /
-            manifest.name /
+            self._get_image_base_path(manifest.digest) /
             'layers' /
             str(digest).replace('sha256:', '')
         )

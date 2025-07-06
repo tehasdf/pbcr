@@ -77,6 +77,19 @@ class Manifest:
 
 
 @dataclass
+class ImageSummary:
+    """A summary of an OCI image, stored in images.json"""
+    digest: Digest
+    registry: str
+    name: str
+    tags: list[str] = field(default_factory=list)
+
+    def asdict(self):
+        """Serialize the image summary"""
+        return asdict(self)
+
+
+@dataclass
 class ImageConfig:
     """An OCI image config.
 
@@ -138,17 +151,17 @@ class ImageStorage(typing.Protocol):
         """Store up a PullToken for the given registry + repo"""
         raise NotImplementedError
 
-    def list_images(self) -> list[Manifest]:
+    def list_images(self) -> list[ImageSummary]:
         """Return all Images in this storage"""
         raise NotImplementedError
 
     def get_manifest(
-        self, registry: str, repo: str,
+        self, registry: str, repo: str, reference: str | None = None
     ) -> Manifest | None:
         """Return the Manifest of the specified image, or None"""
         raise NotImplementedError
 
-    def store_manifest(self, manifest: Manifest):
+    def store_manifest(self, manifest: Manifest, tags: list[str] | None = None):
         """Store an OCI image Manifest"""
         raise NotImplementedError
 

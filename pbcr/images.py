@@ -11,19 +11,17 @@ def _format_images_table(images: list[Manifest]) -> str:
         return "No images found."
 
     # Define headers and calculate column widths
-    headers = ["REPOSITORY", "REGISTRY", "DIGEST", "LAYERS"]
+    headers = ["REPOSITORY", "REGISTRY", "DIGEST"]
     # Extract data for each image
     rows = []
     for image in images:
         # Truncate digest to first 12 characters for readability
         short_digest = str(image.digest).replace('sha256:', '')[:12]
-        layer_count = str(len(image.layers))
 
         rows.append([
             image.name,
             image.registry,
             short_digest,
-            layer_count
         ])
     # Calculate column widths
     col_widths = [len(header) for header in headers]

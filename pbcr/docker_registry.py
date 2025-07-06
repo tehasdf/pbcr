@@ -75,26 +75,35 @@ def _find_image_digest(
     else:
         raise ValueError(f'manifest for {architecture} not found')
 
-    return manifest_spec['digest'], manifest_spec['mediaType']
+    return Digest(manifest_spec['digest']), MediaType(manifest_spec['mediaType'])
 
 
 def _get_image_manifest(
     storage: ImageStorage,
     repo: str,
-    digest: Digest | None = None,
-    mediatype: MediaType | None = None,
+    reference: str,
     token: PullToken | None = None,
 ) -> Manifest:
     if manifest := storage.get_manifest(
-        registry='docker.io', repo=repo,
+        registry='docker.io', repo=repo, reference=reference
     ):
         return manifest
     if token is None:
         raise TokenRequiredError('token is required to fetch manifest')
+
+    if reference.startswith('sha256:'):
+        digest = Digest(reference)
+        mediatype = None
+        tags = None
+    else:
+        digest, mediatype = _find_image_digest(repo, reference, token)
+        tags = [reference]
+
     if mediatype is None:
         raise RuntimeError('need mediatype to fetch manifest')
     if digest is None:
         raise RuntimeError('need digest to fetch manifest')
+
     manifest_response = requests.get(
         url=f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
         headers={
@@ -103,22 +112,22 @@ def _get_image_manifest(
         },
         timeout=10,
     )
-    manifest_response.raise_for_status() # Raise an exception for HTTP errors
+    manifest_response.raise_for_status()
     manifest_data = manifest_response.json()
     manifest = Manifest(
         registry='docker.io',
         name=repo,
         digest=digest,
         config=(
-            manifest_data['config']['digest'],
-            manifest_data['config']['mediaType'],
+            Digest(manifest_data['config']['digest']),
+            MediaType(manifest_data['config']['mediaType']),
         ),
         layers=[
-            (layer['digest'], layer['mediaType'])
+            (Digest(layer['digest']), MediaType(layer['mediaType']))
             for layer in manifest_data['layers']
         ],
     )
-    storage.store_manifest(manifest=manifest)
+    storage.store_manifest(manifest=manifest, tags=tags)
     return manifest
 
 
@@ -194,13 +203,7 @@ def pull_image_from_docker(storage: ImageStorage, image_name: str) -> Image:
     reference = reference or 'latest'
     token = _get_pull_token(storage, repo)
 
-    if reference.startswith('sha256:'):
-        digest = Digest(reference)
-        mediatype = None
-    else:
-        digest, mediatype = _find_image_digest(repo, reference, token)
-
-    manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
+    manifest = _get_image_manifest(storage, repo, reference, token)
     image_config = _get_image_config(storage, manifest, token)
     layers = _get_image_layers(storage, manifest, token)
 
@@ -219,24 +222,15 @@ def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
 
 
     try:
-        manifest = _get_image_manifest(storage, repo, None, None, None)
+
+        manifest = _get_image_manifest(storage, repo, reference, None)
         image_config = _get_image_config(storage, manifest, None)
         layers = _get_image_layers(storage, manifest, None)
+        return Image(
+            registry='docker.io',
+            manifest=manifest,
+            config=image_config,
+            layers=layers,
+        )
     except TokenRequiredError:
-        token = _get_pull_token(storage, repo)
-        if reference.startswith('sha256:'):
-            digest = Digest(reference)
-            mediatype = None
-        else:
-            digest, mediatype = _find_image_digest(repo, reference, token)
-
-        manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
-        image_config = _get_image_config(storage, manifest, token)
-        layers = _get_image_layers(storage, manifest, token)
-
-    return Image(
-        registry='docker.io',
-        manifest=manifest,
-        config=image_config,
-        layers=layers,
-    )
+        return pull_image_from_docker(storage, image_name)

@@ -39,16 +39,23 @@ class FileImageStorage:
             str(digest).replace('sha256:', '')
         )
 
-    def list_images(self) -> list[ImageSummary]:
-        """Return stored images"""
+    def _load_images_json(self) -> dict[str, ImageSummary]:
+        """Loads and returns the content of images.json."""
         images_path = self._base / 'images.json'
         try:
             with images_path.open('r') as images_file:
-                images = json.load(images_file)
+                images_data = json.load(images_file)
         except (ValueError, IOError):
-            images = {}
+            images_data = {}
+
+        # Convert raw dict data to ImageSummary objects
+        return {k: ImageSummary(**v) for k, v in images_data.items()}
+
+    def list_images(self) -> list[ImageSummary]:
+        """Return stored images"""
+        images = self._load_images_json()
         # Return ImageSummary objects directly from images.json
-        return [ImageSummary(**img_summary_data) for img_summary_data in images.values()]
+        return list(images.values())
 
     def get_pull_token(self, registry: str, repo: str) -> PullToken | None:
         """Look up a PullToken for the given registry + repo
@@ -93,25 +100,19 @@ class FileImageStorage:
         self, registry: str, repo: str, reference: str | None = None
     ) -> Manifest | None:
         """Return the Manifest of the specified image, or None"""
-        images_path = self._base / 'images.json'
-        try:
-            with images_path.open('r') as images_file:
-                images = json.load(images_file)
-        except (ValueError, IOError):
-            images = {}
+        images = self._load_images_json()
 
         found_digest = None
 
         if reference and reference.startswith('sha256:'):
             # If reference is a digest, try to find it directly
             if reference in images:
-                img_summary = ImageSummary(**images[reference])
+                img_summary = images[reference]
                 if img_summary.registry == registry and img_summary.name == repo:
                     found_digest = img_summary.digest
         else:
             # Otherwise, iterate and match by registry, name, and optionally tag
-            for img_summary_data in images.values():
-                img_summary = ImageSummary(**img_summary_data)
+            for img_summary in images.values():
                 if img_summary.registry == registry and img_summary.name == repo:
                     if reference is None or reference in img_summary.tags:
                         found_digest = img_summary.digest
@@ -137,9 +138,9 @@ class FileImageStorage:
         images_path.touch()
         with images_path.open('r+') as images_file:
             try:
-                images = json.load(images_file)
+                images_data = json.load(images_file)
             except ValueError:
-                images = {}
+                images_data = {}
             # Store only digest, registry, name, and tags in images.json
             image_summary = ImageSummary(
                 digest=manifest.digest,
@@ -147,10 +148,10 @@ class FileImageStorage:
                 name=manifest.name,
                 tags=tags if tags is not None else [],
             )
-            images[str(manifest.digest)] = image_summary.asdict()
+            images_data[str(manifest.digest)] = image_summary.asdict()
             images_file.seek(0)
             images_file.truncate()
-            json.dump(images, images_file, indent=4)
+            json.dump(images_data, images_file, indent=4)
 
     def get_image_config(self, manifest: Manifest) -> ImageConfig | None:
         """Get the ImageConfig for the image described by the Manifest"""

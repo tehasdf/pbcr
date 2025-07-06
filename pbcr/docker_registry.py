@@ -217,18 +217,18 @@ def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
 
-    token = _get_pull_token(storage, repo)
-    if reference.startswith('sha256:'):
-        digest = Digest(reference)
-        mediatype = None
-    else:
-        digest, mediatype = _find_image_digest(repo, reference, token)
 
     try:
-        manifest = _get_image_manifest(storage, repo, digest, mediatype, None)
+        manifest = _get_image_manifest(storage, repo, None, None, None)
         image_config = _get_image_config(storage, manifest, None)
         layers = _get_image_layers(storage, manifest, None)
     except TokenRequiredError:
+        token = _get_pull_token(storage, repo)
+        if reference.startswith('sha256:'):
+            digest = Digest(reference)
+            mediatype = None
+        else:
+            digest, mediatype = _find_image_digest(repo, reference, token)
 
         manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
         image_config = _get_image_config(storage, manifest, token)

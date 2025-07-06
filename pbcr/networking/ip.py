@@ -42,8 +42,8 @@ class IPInfo:
         """Parse an IP header"""
         ihl = (data[0] & 0x0F) * 4
         cksum = checksum(data[:ihl])
-        if cksum != 0 and cksum != 0xffff:
-            raise ValueError("Invalid checksum: %s" % hex(cksum))
+        if cksum not in (0, 0xffff):
+            raise ValueError(f"Invalid checksum: {hex(cksum)}")
         hdr = cls(
             src=bytes(data[12:16]),
             dst=bytes(data[16:20]),

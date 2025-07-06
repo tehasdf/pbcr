@@ -100,14 +100,14 @@ def test_container_can_reach_http_server(tmp_path: pathlib.Path):
     """
     Integration test: Verify a container can reach an external HTTP server.
     """
-    requests = 0
+    request_count = 0
 
     class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         """A simple HTTP request handler that counts requests."""
         def do_GET(self):  # pylint: disable=invalid-name
             """Handle GET requests."""
-            nonlocal requests
-            requests += 1
+            nonlocal request_count
+            request_count += 1
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
@@ -153,4 +153,4 @@ def test_container_can_reach_http_server(tmp_path: pathlib.Path):
         httpd.shutdown()
         httpd.server_close()
         server_thread.join(timeout=1) # Wait for the thread to finish, with a timeout
-    assert requests > 0, "No requests were made to the test HTTP server."
+    assert request_count > 0, "No requests were made to the test HTTP server."

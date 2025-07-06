@@ -5,6 +5,7 @@ This defines the CLI entrypoint for PBCR
 
 import argparse
 import pathlib
+import sys
 
 from pbcr.containers import rm_container, list_containers
 from pbcr.images import list_images_command, pull_image_command
@@ -90,11 +91,12 @@ def main():
             )
             if cfg.daemon and cfg.remove:
                 raise ValueError('Cannot run in daemon mode with remove')
-            run_command(
+            exitcode = run_command(
                 image_storage,
                 container_storage,
                 cfg,
             )
+            sys.exit(exitcode)
         case "ps":
             list_containers(container_storage)
         case "rm":

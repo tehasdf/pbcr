@@ -256,8 +256,8 @@ class TCPStack:
             tcb.state = TCPState.SYN_RECEIVED
 
             reader, writer = await asyncio.open_connection(
-                host='localhost',
-                port=8000,
+                host='127.0.0.1',
+                port=tcb.src_port,
             )
             tcb.proxy_reader = reader
             tcb.proxy_writer = writer

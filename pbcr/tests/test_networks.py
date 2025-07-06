@@ -1,10 +1,18 @@
 """Tests for the networking module."""
 
 import socket
+import http.server
+import threading
+import time
+import pytest
+import pathlib
 
 from scapy.layers.inet import IP, TCP
 
 from pbcr.networking import checksum, IPInfo, TCPInfo
+from pbcr.run import run_command
+from pbcr.storage import FileImageStorage, FileContainerStorage
+from pbcr.types import ContainerConfig
 
 
 def test_ip_checksum():
@@ -80,3 +88,61 @@ def test_tcp_build():
     built_ip = iph.build(len(built_tcp))
     built = built_ip + built_tcp
     assert built == data
+
+
+def test_container_can_reach_http_server(tmp_path: pathlib.Path):
+    """
+    Integration test: Verify a container can reach an external HTTP server.
+    """
+    requests = 0
+    class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            nonlocal requests
+            requests += 1
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"Hello from test server!")
+
+    # Choose an available port
+    server_address = ('127.0.0.1', 0) # 0 means OS will assign a free port
+    httpd = http.server.HTTPServer(server_address, SimpleHTTPRequestHandler)
+
+    # Get the actual port assigned by the OS
+    _, port = httpd.socket.getsockname()
+
+    # Start the server in a separate thread
+    server_thread = threading.Thread(target=httpd.serve_forever)
+    server_thread.daemon = True  # Allow the main thread to exit even if server thread is running
+    server_thread.start()
+
+    try:
+        # Give the server a moment to start up
+        time.sleep(0.1) 
+
+        # Setup storage for pbcr
+        image_storage = FileImageStorage.create(tmp_path / "images")
+        container_storage = FileContainerStorage.create(tmp_path / "containers")
+
+        # Define the container configuration
+        # Use the actual host and port of the test server
+        container_config = ContainerConfig(
+            image_name="docker.io/library/alpine",
+            entrypoint=f"/usr/bin/wget -O - http://192.168.64.2:{port}",
+            daemon=False, # Run in foreground for the test
+            remove=True, # Clean up container after test
+            container_name="test-http-client",
+            volumes=None,
+        )
+
+        # Run the container
+        # This call will block until the container exits
+        run_command(image_storage, container_storage, container_config)
+
+    finally:
+        # Shut down the server
+        httpd.shutdown()
+        httpd.server_close()
+        server_thread.join(timeout=1) # Wait for the thread to finish, with a timeout
+    assert requests > 0, "No requests were made to the test HTTP server."
+

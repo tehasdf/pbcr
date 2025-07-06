@@ -289,7 +289,7 @@ def run_command(
                 if cfg.remove:
                     container_storage.remove_container(container)
                     container_fs.remove()
-                sys.exit(retcode)
+                return retcode
 
 
 def _reader(reader_fd):

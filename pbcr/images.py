@@ -2,10 +2,10 @@
 """
 
 from pbcr.docker_registry import pull_image_from_docker
-from pbcr.types import ImageStorage, Manifest
+from pbcr.types import ImageStorage, ImageSummary
 
 
-def _format_images_table(images: list[Manifest]) -> str:
+def _format_images_table(images: list[ImageSummary]) -> str:
     """Format a list of images into a nice table"""
     if not images:
         return "No images found."

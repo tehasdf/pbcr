@@ -17,6 +17,10 @@ from pbcr.types import (
 REGISTRY_BASE = 'https://registry-1.docker.io'
 
 
+class TokenRequiredError(Exception):
+    """Custom exception raised when a token is required but not provided."""
+
+
 def _get_pull_token(storage: ImageStorage, repo: str) -> PullToken:
     if token := storage.get_pull_token(registry='docker.io', repo=repo):
         return token
@@ -26,6 +30,7 @@ def _get_pull_token(storage: ImageStorage, repo: str) -> PullToken:
         f'scope=repository:{repo}:pull',
         timeout=10,
     )
+    resp.raise_for_status() # Raise an exception for HTTP errors
     token_data = resp.json()
     # The 'issued_at' timestamp from Docker Hub API sometimes includes
     # microseconds which are not always handled consistently by datetime.fromisoformat.
@@ -58,6 +63,7 @@ def _find_image_digest(
         },
         timeout=10,
     )
+    index_response.raise_for_status() # Raise an exception for HTTP errors
     index_data = index_response.json()
     for manifest_spec in index_data['manifests']:
         try:
@@ -84,7 +90,7 @@ def _get_image_manifest(
     ):
         return manifest
     if token is None:
-        raise RuntimeError('need token to fetch manifest')
+        raise TokenRequiredError('token is required to fetch manifest')
     if mediatype is None:
         raise RuntimeError('need mediatype to fetch manifest')
     if digest is None:
@@ -97,6 +103,7 @@ def _get_image_manifest(
         },
         timeout=10,
     )
+    manifest_response.raise_for_status() # Raise an exception for HTTP errors
     manifest_data = manifest_response.json()
     manifest = Manifest(
         registry='docker.io',
@@ -125,7 +132,7 @@ def _get_image_layers(
         layer = storage.get_image_layer(manifest, layer_digest)
         if not layer:
             if token is None:
-                raise RuntimeError('need token to fetch layers')
+                raise TokenRequiredError('token is required to fetch layers')
 
             layer_response = requests.get(
                 f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{layer_digest}',
@@ -135,6 +142,7 @@ def _get_image_layers(
                 },
                 timeout=10,
             )
+            layer_response.raise_for_status() # Raise an exception for HTTP errors
             layer_path = storage.store_image_layer(
                 manifest,
                 layer_digest,
@@ -156,7 +164,7 @@ def _get_image_config(
     if image_config := storage.get_image_config(manifest):
         return image_config
     if token is None:
-        raise RuntimeError('need token to fetch config')
+        raise TokenRequiredError('token is required to fetch config')
     config_resp = requests.get(
         f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{manifest.config[0]}',
         headers={
@@ -165,6 +173,7 @@ def _get_image_config(
         },
         timeout=10,
     )
+    config_resp.raise_for_status() # Raise an exception for HTTP errors
 
     config_data = config_resp.json()
     # Ensure all required fields for ImageConfig are present, providing defaults if missing
@@ -204,13 +213,26 @@ def pull_image_from_docker(storage: ImageStorage, image_name: str) -> Image:
 
 
 def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
-    """Load an image fetched from the docker.io registry"""
+    """Load an image fetched from the docker.io registry, or pull it if not found"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
 
-    manifest = _get_image_manifest(storage, repo, None, None, None)
-    image_config = _get_image_config(storage, manifest, None)
-    layers = _get_image_layers(storage, manifest)
+    token = _get_pull_token(storage, repo)
+    if reference.startswith('sha256:'):
+        digest = Digest(reference)
+        mediatype = None
+    else:
+        digest, mediatype = _find_image_digest(repo, reference, token)
+
+    try:
+        manifest = _get_image_manifest(storage, repo, digest, mediatype, None)
+        image_config = _get_image_config(storage, manifest, None)
+        layers = _get_image_layers(storage, manifest, None)
+    except TokenRequiredError:
+
+        manifest = _get_image_manifest(storage, repo, digest, mediatype, token)
+        image_config = _get_image_config(storage, manifest, token)
+        layers = _get_image_layers(storage, manifest, token)
 
     return Image(
         registry='docker.io',

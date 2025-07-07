@@ -103,6 +103,8 @@ class ImageConfig:
     config: dict[str, typing.Any] = field(default_factory=dict)
     rootfs: dict[str, typing.Any] = field(default_factory=dict)
     history: list[dict[str, typing.Any]] = field(default_factory=list)
+    uids: list[str] = field(default_factory=list)
+    gids: list[str] = field(default_factory=list)
 
     def asdict(self):
         """Serialize the ImageConfig"""

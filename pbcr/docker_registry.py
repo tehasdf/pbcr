@@ -1,5 +1,6 @@
 """Interop with the docker.io registry
 """
+import pathlib
 import requests
 
 from pbcr.types import (
@@ -166,6 +167,45 @@ def _get_image_layers(
     return layers
 
 
+def _find_ids(source_path: pathlib.Path) -> list[str]:
+    """Extract IDs from /etc/passwd or /etc/group files"""
+    ids = []
+    try:
+        with source_path.open() as source_file:
+            for line in source_file:
+                parts = line.split(':')
+                if len(parts) >= 3:
+                    ids.append(parts[2])
+    except IOError:
+        pass
+    return ids
+
+
+def _discover_image_ids(layers: list[ImageLayer]) -> tuple[list[str], list[str]]:
+    """Discover UIDs and GIDs from image layers"""
+    uids = []
+    gids = []
+
+    # Search through layers in reverse order (top layer first)
+    for layer in reversed(layers):
+        passwd_path = layer.path / 'etc' / 'passwd'
+        group_path = layer.path / 'etc' / 'group'
+
+        # If we haven't found UIDs yet and this layer has /etc/passwd, use it
+        if not uids and passwd_path.exists():
+            uids = _find_ids(passwd_path)
+
+        # If we haven't found GIDs yet and this layer has /etc/group, use it
+        if not gids and group_path.exists():
+            gids = _find_ids(group_path)
+
+        # If we found both, we can stop searching
+        if uids and gids:
+            break
+
+    return uids, gids
+
+
 def _get_image_config(
     storage: ImageStorage,
     manifest: Manifest,
@@ -208,6 +248,15 @@ def pull_image_from_docker(storage: ImageStorage, image_name: str) -> Image:
     image_config = _get_image_config(storage, manifest, token)
     layers = _get_image_layers(storage, manifest, token)
 
+    # Discover UIDs and GIDs from the layers and update the image config
+    uids, gids = _discover_image_ids(layers)
+    if uids or gids:
+        # Update the config with discovered IDs
+        image_config.uids = uids
+        image_config.gids = gids
+        # Store the updated config
+        storage.store_image_config(manifest, image_config)
+
     return Image(
         registry='docker.io',
         manifest=manifest,
@@ -220,7 +269,6 @@ def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
     """Load an image fetched from the docker.io registry, or pull it if not found"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
-
 
     try:
 

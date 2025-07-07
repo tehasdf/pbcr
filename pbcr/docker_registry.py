@@ -185,24 +185,24 @@ def _discover_image_ids(layers: list[ImageLayer]) -> tuple[list[str], list[str]]
     """Discover UIDs and GIDs from image layers"""
     uids = []
     gids = []
-    
+
     # Search through layers in reverse order (top layer first)
     for layer in reversed(layers):
         passwd_path = layer.path / 'etc' / 'passwd'
         group_path = layer.path / 'etc' / 'group'
-        
+
         # If we haven't found UIDs yet and this layer has /etc/passwd, use it
         if not uids and passwd_path.exists():
             uids = _find_ids(passwd_path)
-        
+
         # If we haven't found GIDs yet and this layer has /etc/group, use it
         if not gids and group_path.exists():
             gids = _find_ids(group_path)
-        
+
         # If we found both, we can stop searching
         if uids and gids:
             break
-    
+
     return uids, gids
 
 

@@ -96,7 +96,8 @@ def test_tcp_build():
     os.environ.get("CI") == "true",
     reason="Integration test, requires connectivity",
 )
-def test_container_can_reach_http_server(tmp_path: pathlib.Path):
+@pytest.mark.asyncio
+async def test_container_can_reach_http_server(tmp_path: pathlib.Path):
     """
     Integration test: Verify a container can reach an external HTTP server.
     """
@@ -146,7 +147,7 @@ def test_container_can_reach_http_server(tmp_path: pathlib.Path):
 
         # Run the container
         # This call will block until the container exits
-        run_command(image_storage, container_storage, container_config)
+        await run_command(image_storage, container_storage, container_config)
 
     finally:
         # Shut down the server

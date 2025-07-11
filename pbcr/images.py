@@ -52,17 +52,17 @@ def list_images_command(storage: ImageStorage):
     print(_format_images_table(images))
 
 
-def pull_image(storage: ImageStorage, image_name: str):
+async def pull_image(storage: ImageStorage, image_name: str):
     """Fetch an image into the storage"""
     if image_name.startswith('docker.io/'):
         image_name = image_name.replace('docker.io/', '', 1)
-        img = pull_image_from_docker(storage, image_name)
+        img = await pull_image_from_docker(storage, image_name)
     else:
         raise ValueError(f'unknown image reference: {image_name}')
     print(f'Fetched image {img.manifest.name} with {len(img.layers)} layers')
 
 
-def pull_image_command(storage: ImageStorage, image_names: list[str]):
+async def pull_image_command(storage: ImageStorage, image_names: list[str]):
     """A CLI command facade for pull_image"""
     for image_name in image_names:
-        pull_image(storage, image_name)
+        await pull_image(storage, image_name)

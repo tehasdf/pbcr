@@ -151,13 +151,13 @@ async def _get_image_layers(
     token: PullToken | None = None,
 ) -> list[ImageLayer]:
     layers = []
-    for layer_digest, layer_mediatype in manifest.layers:
-        layer = storage.get_image_layer(manifest, layer_digest)
-        if not layer:
-            if token is None:
-                raise TokenRequiredError('token is required to fetch layers')
+    async with _get_async_client() as client:
+        for layer_digest, layer_mediatype in manifest.layers:
+            layer = storage.get_image_layer(manifest, layer_digest)
+            if not layer:
+                if token is None:
+                    raise TokenRequiredError('token is required to fetch layers')
 
-            async with _get_async_client() as client:
                 layer_response = await client.get(
                     f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{layer_digest}',
                     headers={
@@ -166,17 +166,17 @@ async def _get_image_layers(
                     },
                     timeout=REQUEST_TIMEOUT,
                 )
-            layer_response.raise_for_status() # Raise an exception for HTTP errors
-            layer_path = storage.store_image_layer(
-                manifest,
-                layer_digest,
-                layer_response.content,
-            )
-            layer = ImageLayer(
-                digest=layer_digest,
-                path=layer_path,
-            )
-        layers.append(layer)
+                layer_response.raise_for_status() # Raise an exception for HTTP errors
+                layer_path = storage.store_image_layer(
+                    manifest,
+                    layer_digest,
+                    layer_response.content,
+                )
+                layer = ImageLayer(
+                    digest=layer_digest,
+                    path=layer_path,
+                )
+            layers.append(layer)
     return layers
 
 

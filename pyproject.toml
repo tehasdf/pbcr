@@ -7,7 +7,7 @@ name = "pbcr"
 version = "0.1.0"
 
 dependencies = [
-    "requests",
+    "httpx",
 ]
 
 [tools.setuptools]
@@ -20,6 +20,7 @@ pbcr = "pbcr.main:main"
 test = [
     "pytest",
     "pytest-cov",
+    "pytest-asyncio",
     "pylint",
     "mypy",
     "scapy",

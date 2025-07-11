@@ -147,14 +147,14 @@ def _get_container_spec_from_image(image_config: ImageConfig) -> tuple[list[str]
     return image_config.uids, image_config.gids
 
 
-def _choose_image(storage: ImageStorage, image_name: str) -> Image:
+async def _choose_image(storage: ImageStorage, image_name: str) -> Image:
     if image_name.startswith('docker.io/'):
         image_name = image_name.replace('docker.io/', '', 1)
-        return load_docker_image(storage, image_name)
+        return await load_docker_image(storage, image_name)
     raise ValueError(f'unknown image reference: {image_name}')
 
 
-def run_command(
+async def run_command(
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
     cfg: ContainerConfig,
@@ -163,7 +163,7 @@ def run_command(
     # this has to be fixed later
     # pylint: disable=too-many-locals
     container_name = cfg.container_name or str(uuid.uuid4())
-    img = _choose_image(image_storage, cfg.image_name)
+    img = await _choose_image(image_storage, cfg.image_name)
 
     uidmapper = _UIDMapper.for_current_user()
     container = Container(

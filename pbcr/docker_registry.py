@@ -25,23 +25,18 @@ class TokenRequiredError(Exception):
     """Custom exception raised when a token is required but not provided."""
 
 
-@contextlib.asynccontextmanager
-async def _get_async_client():
-    """Provides an httpx.AsyncClient instance."""
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        yield client
+# Removed _get_async_client context manager as client will be passed explicitly
 
 
-async def _get_pull_token(storage: ImageStorage, repo: str) -> PullToken:
+async def _get_pull_token(storage: ImageStorage, repo: str, client: httpx.AsyncClient) -> PullToken:
     if token := storage.get_pull_token(registry='docker.io', repo=repo):
         return token
 
-    async with _get_async_client() as client:
-        resp = await client.get(
-            'https://auth.docker.io/token?service=registry.docker.io&'
-            f'scope=repository:{repo}:pull',
-            timeout=REQUEST_TIMEOUT,
-        )
+    resp = await client.get(
+        'https://auth.docker.io/token?service=registry.docker.io&'
+        f'scope=repository:{repo}:pull',
+        timeout=REQUEST_TIMEOUT,
+    )
     resp.raise_for_status() # Raise an exception for HTTP errors
     token_data = resp.json()
     # The 'issued_at' timestamp from Docker Hub API sometimes includes
@@ -62,20 +57,20 @@ async def _find_image_digest(
     repo: str,
     tag: str,
     token: PullToken,
+    client: httpx.AsyncClient,
     architecture: str = 'amd64',
 ) -> tuple[Digest, MediaType]:
-    async with _get_async_client() as client:
-        index_response = await client.get(
-            f'{REGISTRY_BASE}/v2/{repo}/manifests/{tag}',
-            headers={
-                'Accept': ','.join([
-                    'application/vnd.docker.distribution.manifest.list.v2+json',
-                    'application/vnd.oci.image.index.v1+json',
-                ]),
-                'Authorization': f'Bearer {token}',
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
+    index_response = await client.get(
+        f'{REGISTRY_BASE}/v2/{repo}/manifests/{tag}',
+        headers={
+            'Accept': ','.join([
+                'application/vnd.docker.distribution.manifest.list.v2+json',
+                'application/vnd.oci.image.index.v1+json',
+            ]),
+            'Authorization': f'Bearer {token}',
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
     index_response.raise_for_status() # Raise an exception for HTTP errors
     index_data = index_response.json()
     for manifest_spec in index_data['manifests']:
@@ -95,6 +90,7 @@ async def _get_image_manifest(
     storage: ImageStorage,
     repo: str,
     reference: str,
+    client: httpx.AsyncClient,
     token: PullToken | None = None,
 ) -> Manifest:
     if token is None:
@@ -105,7 +101,7 @@ async def _get_image_manifest(
         mediatype = None
         tags = None
     else:
-        digest, mediatype = await _find_image_digest(repo, reference, token)
+        digest, mediatype = await _find_image_digest(repo, reference, token, client)
         tags = [reference]
 
     if mediatype is None:
@@ -113,15 +109,14 @@ async def _get_image_manifest(
     if digest is None:
         raise RuntimeError('need digest to fetch manifest')
 
-    async with _get_async_client() as client:
-        manifest_response = await client.get(
-            url=f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
-            headers={
-                'Accept': mediatype,
-                'Authorization': f'Bearer {token}',
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
+    manifest_response = await client.get(
+        url=f'{REGISTRY_BASE}/v2/{repo}/manifests/{digest}',
+        headers={
+            'Accept': mediatype,
+            'Authorization': f'Bearer {token}',
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
     manifest_response.raise_for_status()
     manifest_data = manifest_response.json()
     manifest = Manifest(
@@ -144,33 +139,33 @@ async def _get_image_manifest(
 async def _get_image_layers(
     storage: ImageStorage,
     manifest: Manifest,
+    client: httpx.AsyncClient,
     token: PullToken | None = None,
 ) -> list[ImageLayer]:
     layers = []
-    async with _get_async_client() as client:
-        for layer_digest, layer_mediatype in manifest.layers:
-            if token is None:
-                raise TokenRequiredError('token is required to fetch layers')
+    for layer_digest, layer_mediatype in manifest.layers:
+        if token is None:
+            raise TokenRequiredError('token is required to fetch layers')
 
-            layer_response = await client.get(
-                f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{layer_digest}',
-                headers={
-                    'Accept': layer_mediatype,
-                    'Authorization': f'Bearer {token}',
-                },
-                timeout=REQUEST_TIMEOUT,
-            )
-            layer_response.raise_for_status() # Raise an exception for HTTP errors
-            layer_path = storage.store_image_layer(
-                manifest,
-                layer_digest,
-                layer_response.content,
-            )
-            layer = ImageLayer(
-                digest=layer_digest,
-                path=layer_path,
-            )
-            layers.append(layer)
+        layer_response = await client.get(
+            f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{layer_digest}',
+            headers={
+                'Accept': layer_mediatype,
+                'Authorization': f'Bearer {token}',
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        layer_response.raise_for_status() # Raise an exception for HTTP errors
+        layer_path = storage.store_image_layer(
+            manifest,
+            layer_digest,
+            layer_response.content,
+        )
+        layer = ImageLayer(
+            digest=layer_digest,
+            path=layer_path,
+        )
+        layers.append(layer)
     return layers
 
 
@@ -216,19 +211,19 @@ def _discover_image_ids(layers: list[ImageLayer]) -> tuple[list[str], list[str]]
 async def _get_image_config(
     storage: ImageStorage,
     manifest: Manifest,
+    client: httpx.AsyncClient,
     token: PullToken | None,
 ) -> ImageConfig:
     if token is None:
         raise TokenRequiredError('token is required to fetch config')
-    async with _get_async_client() as client:
-        config_resp = await client.get(
-            f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{manifest.config[0]}',
-            headers={
-                'Accept': manifest.config[1],
-                'Authorization': f'Bearer {token}',
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
+    config_resp = await client.get(
+        f'{REGISTRY_BASE}/v2/{manifest.name}/blobs/{manifest.config[0]}',
+        headers={
+            'Accept': manifest.config[1],
+            'Authorization': f'Bearer {token}',
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
     config_resp.raise_for_status() # Raise an exception for HTTP errors
 
     config_data = config_resp.json()
@@ -248,24 +243,27 @@ async def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
     """Fetch image from the docker.io registry"""
     repo, _, reference = image_name.partition(':')
     reference = reference or 'latest'
-    token = await _get_pull_token(storage, repo)
 
-    manifest = await _get_image_manifest(storage, repo, reference, token)
-    image_config = await _get_image_config(storage, manifest, token)
-    layers = await _get_image_layers(storage, manifest, token)
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        token = await _get_pull_token(storage, repo, client)
 
-    # Discover UIDs and GIDs from the layers and update the image config
-    uids, gids = _discover_image_ids(layers)
-    if uids or gids:
-        # Update the config with discovered IDs
-        image_config.uids = uids
-        image_config.gids = gids
-        # Store the updated config
-        storage.store_image_config(manifest, image_config)
+        manifest = await _get_image_manifest(storage, repo, reference, client, token)
+        image_config = await _get_image_config(storage, manifest, client, token)
+        layers = await _get_image_layers(storage, manifest, client, token)
 
-    return Image(
-        registry='docker.io',
-        manifest=manifest,
-        config=image_config,
-        layers=layers,
-    )
+        # Discover UIDs and GIDs from the layers and update the image config
+        uids, gids = _discover_image_ids(layers)
+        if uids or gids:
+            # Update the config with discovered IDs
+            image_config.uids = uids
+            image_config.gids = gids
+            # Store the updated config
+            storage.store_image_config(manifest, image_config)
+
+        return Image(
+            registry='docker.io',
+            manifest=manifest,
+            config=image_config,
+            layers=layers,
+        )
+

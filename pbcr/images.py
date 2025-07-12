@@ -1,7 +1,7 @@
 """Images-related subcommands
 """
 
-from pbcr.docker_registry import pull_image_from_docker
+from pbcr.docker_registry import load_docker_image
 from pbcr.types import ImageStorage, ImageSummary
 
 
@@ -56,7 +56,7 @@ async def pull_image(storage: ImageStorage, image_name: str):
     """Fetch an image into the storage"""
     if image_name.startswith('docker.io/'):
         image_name = image_name.replace('docker.io/', '', 1)
-        img = await pull_image_from_docker(storage, image_name)
+        img = await load_docker_image(storage, image_name)
     else:
         raise ValueError(f'unknown image reference: {image_name}')
     print(f'Fetched image {img.manifest.name} with {len(img.layers)} layers')

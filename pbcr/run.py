@@ -149,8 +149,17 @@ def _get_container_spec_from_image(image_config: ImageConfig) -> tuple[list[str]
 
 async def _choose_image(storage: ImageStorage, image_name: str) -> Image:
     if image_name.startswith('docker.io/'):
-        image_name = image_name.replace('docker.io/', '', 1)
-        return await load_docker_image(storage, image_name)
+        registry = 'docker.io'
+        repo, _, reference = image_name.replace('docker.io/', '', 1).partition(':')
+        reference = reference or 'latest'
+
+        # Try to get the image from storage first
+        img = storage.get_image(registry, repo, reference)
+        if img:
+            return img
+
+        # If not found in storage, pull it
+        return await load_docker_image(storage, f"{repo}:{reference}")
     raise ValueError(f'unknown image reference: {image_name}')
 
 

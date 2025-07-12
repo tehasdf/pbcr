@@ -14,6 +14,7 @@ from pbcr.types import (
     ImageLayer,
     Container,
     ImageSummary,
+    Image,
 )
 
 
@@ -201,6 +202,32 @@ class FileImageStorage:
         with tarfile.open(fileobj=data_f) as layer_tar:
             layer_tar.extractall(layer_dir)
         return layer_dir
+
+    def get_image(self, registry: str, repo: str, reference: str) -> Image | None:
+        """
+        Returns a full Image object (manifest, config, and layers) or None if not found.
+        """
+        manifest = self.get_manifest(registry, repo, reference)
+        if not manifest:
+            return None
+
+        config = self.get_image_config(manifest)
+        if not config:
+            return None
+
+        layers = []
+        for layer_digest, _ in manifest.layers:
+            layer = self.get_image_layer(manifest, layer_digest)
+            if not layer:
+                return None  # If any layer is missing, the image is incomplete
+            layers.append(layer)
+
+        return Image(
+            registry=registry,
+            manifest=manifest,
+            config=config,
+            layers=layers,
+        )
 
 
 class FileContainerStorage:

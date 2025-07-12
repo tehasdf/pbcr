@@ -34,12 +34,11 @@ async def _do_run_command(parser, **kwargs):
             )
             if cfg.daemon and cfg.remove:
                 raise ValueError('Cannot run in daemon mode with remove')
-            exitcode = await run_command(
+            await run_command(
                 image_storage,
                 container_storage,
                 cfg,
             )
-            sys.exit(exitcode)
         case "ps":
             list_containers(container_storage)
         case "rm":

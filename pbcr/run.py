@@ -264,7 +264,6 @@ async def run_command(
             if cfg.remove:
                 container_storage.remove_container(container)
                 container_fs.remove()
-            # close the executor to clean up threads
             return retcode
 
 

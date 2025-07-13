@@ -4,8 +4,8 @@ This implements the TCP-related networking and proxying.
 """
 import asyncio
 import enum
-import threading
 import typing as t
+import os
 
 from dataclasses import dataclass
 
@@ -158,8 +158,8 @@ class _TCB:
 
 class TCPStack:
     """TCP stack implementation"""
-    def __init__(self, writer: t.Callable[[bytearray], None], loop: asyncio.AbstractEventLoop):
-        self.writer = writer
+    def __init__(self, net_fd: int, loop: asyncio.AbstractEventLoop):
+        self.net_fd = net_fd
         self._tcb = {}
         self._loop = loop
 
@@ -229,7 +229,7 @@ class TCPStack:
 
     def _send_response(self, response: bytearray, tcb: _TCB):
         """Send a response and update sequence number if needed"""
-        self.writer(response)
+        os.write(self.net_fd, response) # Changed from self.writer(response)
         if response[33] & TCPFlags.SYN or response[33] & TCPFlags.FIN:
             tcb.snd_nxt += 1
 

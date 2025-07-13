@@ -231,7 +231,10 @@ async def run_command(
                 loop = asyncio.get_event_loop()
                 # Set the file descriptor to non-blocking mode
                 os.set_blocking(net_fd, False)
-                loop.add_reader(net_fd, _reader_callback, net_fd)
+
+                tcp_stack_instance = TCPStack(net_fd, loop)
+
+                loop.add_reader(net_fd, _reader_callback, net_fd, tcp_stack_instance)
                 barrier.signal()
 
             if not cfg.daemon:
@@ -257,35 +260,27 @@ async def run_command(
     )
 
 
-tcp_stack_instance = None
+# Remove the global tcp_stack_instance variable
+# tcp_stack_instance = None
 
-def _reader_callback(net_fd: int):
-    global tcp_stack_instance
-
-    if tcp_stack_instance is None:
-        # We need a writer function that can be called by TCPStack
-        # This will write back to the network interface
-        def writer_func(data: bytearray):
-            os.write(net_fd, data)
-        tcp_stack_instance = TCPStack(writer_func, asyncio.get_event_loop())
-
-    # Loop to read all available data in a single callback invocation
+def _reader_callback(net_fd: int, tcp_stack_instance: TCPStack):
     while True:
         try:
             data = bytearray(os.read(net_fd, 8192))
             if not data: # No more data to read right now
                 break
 
-            # Process the data with the TCP stack
             iph, data_remaining = IPInfo.parse(data)
+            if iph.ipver != 4:
+                continue
             if iph.proto == 6:  # tcp
                 tcph, data_remaining = TCPInfo.parse(iph, data_remaining)
                 tcp_stack_instance.handle_packet(iph, tcph, data_remaining)
             else:
-                print(f"Unhandled IP protocol: {iph.proto}")
+                print(f"Unhandled IP protocol: {iph.proto}: {data}")
 
         except BlockingIOError: # No more data immediately available
             break
         except Exception as e:
             print(f"Error in _reader_callback: {e}")
-            break # Exit loop on other errors
+            break

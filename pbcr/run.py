@@ -224,6 +224,7 @@ async def run_command(
             )
             send_process_net_fd(left_sock)
             left_sock.close()
+            right_sock.close()
 
             barrier.signal()
             barrier.wait()
@@ -235,6 +236,7 @@ async def run_command(
         else:
             barrier.wait()
             net_fd = receive_process_net_fd(right_sock)
+            left_sock.close()
             right_sock.close()
 
             container.pid = barrier.other_pid

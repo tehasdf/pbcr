@@ -235,8 +235,13 @@ async def run_command(
                 loop.add_reader(net_fd, _reader_callback, net_fd, tcp_stack_instance)
                 barrier.signal()
 
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            def handle_sigint(signum, frame):
+                if barrier.other_pid is not None:
+                    os.kill(barrier.other_pid, signal.SIGINT)
+                else:
+                    signal.default_int_handler(signum, frame)
 
+            signal.signal(signal.SIGINT, handle_sigint)
             retcode = 1
             if barrier.other_pid is not None:
                 _, retcode = await loop.run_in_executor(

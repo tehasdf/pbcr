@@ -17,7 +17,7 @@ from pbcr.types import ContainerConfig
 
 
 async def _do_run_command(parser, **kwargs):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     executor = ThreadPoolExecutor(max_workers=10)
     loop.set_default_executor(executor)
     command = kwargs.pop('command', None)

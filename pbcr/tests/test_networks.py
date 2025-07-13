@@ -101,7 +101,7 @@ async def test_container_can_reach_http_server(tmp_path: pathlib.Path):
     """
     Integration test: Verify a container can reach an external HTTP server.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     request_count = 0
 
     class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):

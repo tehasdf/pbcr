@@ -1,11 +1,11 @@
 """Tests for the networking module."""
 
+import asyncio
 import http.server
 import os
 import pathlib
 import socket
 import threading
-import time
 
 import pytest
 
@@ -101,6 +101,7 @@ async def test_container_can_reach_http_server(tmp_path: pathlib.Path):
     """
     Integration test: Verify a container can reach an external HTTP server.
     """
+    loop = asyncio.get_event_loop()
     request_count = 0
 
     class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -128,7 +129,7 @@ async def test_container_can_reach_http_server(tmp_path: pathlib.Path):
 
     try:
         # Give the server a moment to start up
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
 
         # Setup storage for pbcr
         image_storage = FileImageStorage.create(tmp_path / "images")
@@ -147,7 +148,7 @@ async def test_container_can_reach_http_server(tmp_path: pathlib.Path):
 
         # Run the container
         # This call will block until the container exits
-        await run_command(image_storage, container_storage, container_config)
+        await run_command(loop, image_storage, container_storage, container_config)
 
     finally:
         # Shut down the server

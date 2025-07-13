@@ -16,9 +16,9 @@ from pbcr.storage import FileImageStorage, FileContainerStorage
 from pbcr.types import ContainerConfig
 
 
-async def _do_run_command(parser, **kwargs):
+async def _do_run_command(parser, threadpool_workers=3, **kwargs):
     loop = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(max_workers=10)
+    executor = ThreadPoolExecutor(max_workers=threadpool_workers)
     loop.set_default_executor(executor)
     command = kwargs.pop('command', None)
     base_path = pathlib.Path('~/.pbcr').expanduser().absolute()

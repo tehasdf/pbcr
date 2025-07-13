@@ -4,7 +4,7 @@ import os
 import pathlib
 import pwd
 import shlex
-import signal
+import socket
 import subprocess
 import uuid
 
@@ -24,7 +24,8 @@ from pbcr.types import (
 from pbcr.networking import (
     IPInfo,
     TCPInfo,
-    get_process_net_fd,
+    send_process_net_fd,
+    receive_process_net_fd,
     TCPStack,
 )
 from pbcr.forkbarrier import ForkBarrier
@@ -163,15 +164,34 @@ async def _choose_image(storage: ImageStorage, image_name: str) -> Image:
     raise ValueError(f'unknown image reference: {image_name}')
 
 
+def _find_command_to_run(
+    cfg: ContainerConfig,
+    img: Image,
+) -> list[str]:
+    if cfg.entrypoint:
+        entrypoint = cfg.entrypoint
+        to_run = shlex.split(entrypoint + cfg.command)
+    else:
+        entrypoint = img.config.config.get('Entrypoint')
+        command = img.config.config['Cmd']
+        if not entrypoint:
+            entrypoint = [command[0]]
+            command = command[1:]
+        to_run = entrypoint + command
+    return to_run
+
+
 async def run_command(
+    loop: asyncio.AbstractEventLoop,
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
     cfg: ContainerConfig,
-    ) -> int:
+) -> int:
     """The CLI command that runs a container"""
     # this has to be fixed later
     # pylint: disable=too-many-locals
     container_name = cfg.container_name or str(uuid.uuid4())
+
     img = await _choose_image(image_storage, cfg.image_name)
 
     uidmapper = _UIDMapper.for_current_user()
@@ -189,19 +209,11 @@ async def run_command(
     )
     container_fs.add_volumes(cfg.volumes)
 
-    if cfg.entrypoint:
-        entrypoint = cfg.entrypoint
-        to_run = shlex.split(entrypoint + cfg.command)
-    else:
-        entrypoint = img.config.config.get('Entrypoint')
-        command = img.config.config['Cmd']
-        if not entrypoint:
-            entrypoint = [command[0]]
-            command = command[1:]
-        to_run = entrypoint + command
+    to_run = _find_command_to_run(cfg, img)
 
     container_uids, container_gids = _get_container_spec_from_image(img.config)
 
+    left_sock, right_sock = socket.socketpair()
     with ForkBarrier() as barrier:
         if barrier.is_child:
             libc.unshare(
@@ -210,6 +222,10 @@ async def run_command(
                 libc.CLONE_NEWNS |
                 libc.CLONE_NEWNET,
             )
+            send_process_net_fd(left_sock)
+            left_sock.close()
+            right_sock.close()
+
             barrier.signal()
             barrier.wait()
 
@@ -219,6 +235,10 @@ async def run_command(
 
         else:
             barrier.wait()
+            net_fd = receive_process_net_fd(right_sock)
+            left_sock.close()
+            right_sock.close()
+
             container.pid = barrier.other_pid
             container_storage.store_container(container)
 
@@ -226,41 +246,28 @@ async def run_command(
                 uidmapper.newuidmap(barrier.other_pid, container_uids)
                 uidmapper.newgidmap(barrier.other_pid, container_gids)
 
-                net_fd = get_process_net_fd(barrier.other_pid)
-                loop = asyncio.get_event_loop()
-                # Set the file descriptor to non-blocking mode
                 os.set_blocking(net_fd, False)
-
                 tcp_stack_instance = TCPStack(net_fd, loop)
-
                 loop.add_reader(net_fd, _reader_callback, net_fd, tcp_stack_instance)
+
                 barrier.signal()
 
-            if not cfg.daemon:
-                signal.signal(signal.SIGINT, signal.SIG_IGN)
+            retcode = 1
+            if barrier.other_pid is not None:
+                while True:
+                    try:
+                        _, retcode = os.waitpid(barrier.other_pid, os.WNOHANG)
+                        await asyncio.sleep(0.1)
+                    except ChildProcessError:
+                        break
 
-                retcode = 1
-                if barrier.other_pid is not None:
-                    # Use loop.run_in_executor to run the blocking os.waitpid in a separate thread
-                    # This allows the asyncio event loop to continue processing other tasks
-                    _, retcode = await loop.run_in_executor(
-                        None, # Use the default ThreadPoolExecutor
-                        os.waitpid,
-                        barrier.other_pid,
-                        0 # Blocking wait for the child process
-                    )
-                if cfg.remove:
-                    container_storage.remove_container(container)
-                    container_fs.remove()
-                print('return code:', retcode)
-                return retcode
-    raise RuntimeError(
-        "This should never happen, the container process did not exit"
-    )
+                os.close(net_fd)
+                loop.remove_reader(net_fd)
+            if cfg.remove:
+                container_storage.remove_container(container)
+                container_fs.remove()
+            return retcode
 
-
-# Remove the global tcp_stack_instance variable
-# tcp_stack_instance = None
 
 def _reader_callback(net_fd: int, tcp_stack_instance: TCPStack):
     while True:

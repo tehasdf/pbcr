@@ -7,6 +7,8 @@ import asyncio
 import argparse
 import pathlib
 
+from concurrent.futures import ThreadPoolExecutor
+
 from pbcr.containers import rm_container, list_containers
 from pbcr.images import list_images_command, pull_image_command
 from pbcr.run import run_command
@@ -14,7 +16,10 @@ from pbcr.storage import FileImageStorage, FileContainerStorage
 from pbcr.types import ContainerConfig
 
 
-async def _do_run_command(parser, **kwargs):
+async def _do_run_command(parser, threadpool_workers=3, **kwargs):
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(max_workers=threadpool_workers)
+    loop.set_default_executor(executor)
     command = kwargs.pop('command', None)
     base_path = pathlib.Path('~/.pbcr').expanduser().absolute()
     image_storage = FileImageStorage.create(base_path)
@@ -31,9 +36,8 @@ async def _do_run_command(parser, **kwargs):
                 image_name=image_name,
                 **kwargs,
             )
-            if cfg.daemon and cfg.remove:
-                raise ValueError('Cannot run in daemon mode with remove')
             await run_command(
+                loop,
                 image_storage,
                 container_storage,
                 cfg,
@@ -47,7 +51,8 @@ async def _do_run_command(parser, **kwargs):
             )
         case _:
             parser.print_help()
-    print('Done')
+
+    executor.shutdown(wait=True)
 
 
 def main():
@@ -79,12 +84,6 @@ def main():
         dest='entrypoint',
         default='',
         required=False,
-    )
-    run_parser.add_argument(
-        '-d',
-        '--daemon',
-        action='store_true',
-        dest='daemon',
     )
     run_parser.add_argument(
         '--rm',

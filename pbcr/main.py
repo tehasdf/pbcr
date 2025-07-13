@@ -31,8 +31,6 @@ async def _do_run_command(parser, **kwargs):
                 image_name=image_name,
                 **kwargs,
             )
-            if cfg.daemon and cfg.remove:
-                raise ValueError('Cannot run in daemon mode with remove')
             await run_command(
                 image_storage,
                 container_storage,
@@ -47,7 +45,6 @@ async def _do_run_command(parser, **kwargs):
             )
         case _:
             parser.print_help()
-    print('Done')
 
 
 def main():
@@ -79,12 +76,6 @@ def main():
         dest='entrypoint',
         default='',
         required=False,
-    )
-    run_parser.add_argument(
-        '-d',
-        '--daemon',
-        action='store_true',
-        dest='daemon',
     )
     run_parser.add_argument(
         '--rm',

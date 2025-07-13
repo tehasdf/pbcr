@@ -228,7 +228,6 @@ async def run_command(
 
                 net_fd = get_process_net_fd(barrier.other_pid)
                 loop = asyncio.get_event_loop()
-                # Set the file descriptor to non-blocking mode
                 os.set_blocking(net_fd, False)
 
                 tcp_stack_instance = TCPStack(net_fd, loop)
@@ -236,31 +235,22 @@ async def run_command(
                 loop.add_reader(net_fd, _reader_callback, net_fd, tcp_stack_instance)
                 barrier.signal()
 
-            if not cfg.daemon:
-                signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-                retcode = 1
-                if barrier.other_pid is not None:
-                    # Use loop.run_in_executor to run the blocking os.waitpid in a separate thread
-                    # This allows the asyncio event loop to continue processing other tasks
-                    _, retcode = await loop.run_in_executor(
-                        None, # Use the default ThreadPoolExecutor
-                        os.waitpid,
-                        barrier.other_pid,
-                        0 # Blocking wait for the child process
-                    )
-                if cfg.remove:
-                    container_storage.remove_container(container)
-                    container_fs.remove()
-                print('return code:', retcode)
-                return retcode
-    raise RuntimeError(
-        "This should never happen, the container process did not exit"
-    )
+            retcode = 1
+            if barrier.other_pid is not None:
+                _, retcode = await loop.run_in_executor(
+                    None, # Use the default ThreadPoolExecutor
+                    os.waitpid,
+                    barrier.other_pid,
+                    0 # Blocking wait for the child process
+                )
+            if cfg.remove:
+                container_storage.remove_container(container)
+                container_fs.remove()
+            print('return code:', retcode)
+            return retcode
 
-
-# Remove the global tcp_stack_instance variable
-# tcp_stack_instance = None
 
 def _reader_callback(net_fd: int, tcp_stack_instance: TCPStack):
     while True:

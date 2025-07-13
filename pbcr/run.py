@@ -256,7 +256,7 @@ async def run_command(
             if barrier.other_pid is not None:
                 while True:
                     try:
-                        retcode = os.waitpid(barrier.other_pid, os.WNOHANG)
+                        _, retcode = os.waitpid(barrier.other_pid, os.WNOHANG)
                         await asyncio.sleep(0.1)
                     except ChildProcessError:
                         break

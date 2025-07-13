@@ -6,7 +6,6 @@ import pwd
 import shlex
 import signal
 import subprocess
-import threading
 import uuid
 
 import typing as t
@@ -280,7 +279,4 @@ def _reader_callback(net_fd: int, tcp_stack_instance: TCPStack):
                 print(f"Unhandled IP protocol: {iph.proto}: {data}")
 
         except BlockingIOError: # No more data immediately available
-            break
-        except Exception as e:
-            print(f"Error in _reader_callback: {e}")
             break

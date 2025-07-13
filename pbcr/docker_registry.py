@@ -1,6 +1,5 @@
 """Interop with the docker.io registry
 """
-import contextlib
 import pathlib
 
 import httpx
@@ -263,4 +262,3 @@ async def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
         config=image_config,
         layers=layers,
     )
-

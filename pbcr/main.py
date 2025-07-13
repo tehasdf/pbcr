@@ -6,7 +6,6 @@ This defines the CLI entrypoint for PBCR
 import asyncio
 import argparse
 import pathlib
-import sys
 
 from pbcr.containers import rm_container, list_containers
 from pbcr.images import list_images_command, pull_image_command

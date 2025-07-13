@@ -156,7 +156,7 @@ class _TCB:
         return (bytes(self.src_ip), self.src_port, bytes(self.dst_ip), self.dst_port)
 
 
-class TCPStack:
+class TCPStack:  # pylint: disable=too-few-public-methods
     """TCP stack implementation"""
     def __init__(self, net_fd: int, loop: asyncio.AbstractEventLoop):
         self.net_fd = net_fd

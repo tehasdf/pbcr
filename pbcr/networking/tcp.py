@@ -158,22 +158,10 @@ class _TCB:
 
 class TCPStack:
     """TCP stack implementation"""
-    def __init__(self, writer: t.Callable[[bytearray], None]):
+    def __init__(self, writer: t.Callable[[bytearray], None], loop: asyncio.AbstractEventLoop):
         self.writer = writer
         self._tcb = {}
-        self._loop = asyncio.new_event_loop()
-        self.thread = None
-
-    def start(self):
-        """Start the TCP stack"""
-        self.thread = threading.Thread(
-            target=self._run,
-            daemon=True,
-        )
-        self.thread.start()
-
-    def _run(self):
-        self._loop.run_forever()
+        self._loop = loop
 
     def handle_packet(
         self,
@@ -187,7 +175,6 @@ class TCPStack:
                 self._do_handle(iph, tcph, data)
             )
         )
-
 
     def _get_tcb(self, iph: IPInfo, tcph: TCPInfo) -> _TCB | None:
         """Get TCB for this connection, creating if needed"""

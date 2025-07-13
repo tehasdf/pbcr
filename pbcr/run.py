@@ -245,6 +245,7 @@ async def run_command(
                 if cfg.remove:
                     container_storage.remove_container(container)
                     container_fs.remove()
+                print('return code:', retcode)
                 return retcode
     raise RuntimeError(
         "This should never happen, the container process did not exit"

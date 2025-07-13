@@ -48,6 +48,7 @@ async def _do_run_command(parser, **kwargs):
             )
         case _:
             parser.print_help()
+    print('Done')
 
 
 def main():

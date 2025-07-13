@@ -25,9 +25,6 @@ class TokenRequiredError(Exception):
     """Custom exception raised when a token is required but not provided."""
 
 
-# Removed _get_async_client context manager as client will be passed explicitly
-
-
 async def _get_pull_token(storage: ImageStorage, repo: str, client: httpx.AsyncClient) -> PullToken:
     if token := storage.get_pull_token(registry='docker.io', repo=repo):
         return token
@@ -260,10 +257,10 @@ async def load_docker_image(storage: ImageStorage, image_name: str) -> Image:
             # Store the updated config
             storage.store_image_config(manifest, image_config)
 
-        return Image(
-            registry='docker.io',
-            manifest=manifest,
-            config=image_config,
-            layers=layers,
-        )
+    return Image(
+        registry='docker.io',
+        manifest=manifest,
+        config=image_config,
+        layers=layers,
+    )
 

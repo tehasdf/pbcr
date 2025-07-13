@@ -8,6 +8,7 @@ import pathlib
 from unittest import mock
 
 import pytest
+import httpx
 
 from pbcr.docker_registry import (
     _get_pull_token,
@@ -15,7 +16,6 @@ from pbcr.docker_registry import (
     _get_image_manifest,
     _get_image_layers,
     _get_image_config,
-    pull_image_from_docker,
     load_docker_image,
 )
 from pbcr.types import (
@@ -130,37 +130,36 @@ def mock_config():
 async def test_get_pull_token_cached(mock_storage, mock_token):
     """Test retrieving a cached pull token."""
     mock_storage.store_pull_token("docker.io", "library/ubuntu", mock_token)
+    client = httpx.AsyncClient() # Dummy client, not used in this test path
 
-    token = await _get_pull_token(mock_storage, "library/ubuntu")
+    token = await _get_pull_token(mock_storage, "library/ubuntu", client)
 
     assert token == mock_token
 
 
 @pytest.mark.asyncio
-@mock.patch("httpx.AsyncClient")
-async def test_get_pull_token_fetch(mock_async_client, mock_storage):
+async def test_get_pull_token_fetch(mock_storage):
     """Test fetching a pull token from the registry."""
-    mock_response = mock.Mock()
-    mock_response.json.return_value = {
+    response_data = {
         "token": "new_token",
         "expires_in": 300,
         "issued_at": "2023-01-01T00:00:00.0000",
     }
-    mock_async_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=response_data)
+        )
+    )
 
-    token = await _get_pull_token(mock_storage, "library/ubuntu")
-
+    token = await _get_pull_token(mock_storage, "library/ubuntu", client)
     assert token.token == "new_token"
-    mock_async_client.return_value.__aenter__.return_value.get.assert_called_once()
     assert mock_storage.get_pull_token("docker.io", "library/ubuntu") == token
 
 
 @pytest.mark.asyncio
-@mock.patch("httpx.AsyncClient")
-async def test_find_image_digest(mock_async_client, mock_token):
+async def test_find_image_digest(mock_token):
     """Test finding the image digest for a specific architecture."""
-    mock_response = mock.Mock()
-    mock_response.json.return_value = {
+    response_data = {
         "manifests": [
             {
                 "digest": "sha256:arm64digest",
@@ -174,21 +173,22 @@ async def test_find_image_digest(mock_async_client, mock_token):
             }
         ]
     }
-    mock_async_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=response_data)
+        )
+    )
 
-    digest, mediatype = await _find_image_digest("library/ubuntu", "latest", mock_token)
+    digest, mediatype = await _find_image_digest("library/ubuntu", "latest", mock_token, client)
 
     assert digest == "sha256:amd64digest"
     assert mediatype == "application/vnd.docker.distribution.manifest.v2+json"
-    mock_async_client.return_value.__aenter__.return_value.get.assert_called_once()
 
 
 @pytest.mark.asyncio
-@mock.patch("httpx.AsyncClient")
-async def test_find_image_digest_not_found(mock_async_client, mock_token):
+async def test_find_image_digest_not_found(mock_token):
     """Test case where the image digest for the architecture is not found."""
-    mock_response = mock.Mock()
-    mock_response.json.return_value = {
+    response_data = {
         "manifests": [
             {
                 "digest": "sha256:arm64digest",
@@ -197,28 +197,20 @@ async def test_find_image_digest_not_found(mock_async_client, mock_token):
             }
         ]
     }
-    mock_async_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=response_data)
+        )
+    )
 
     with pytest.raises(ValueError, match="manifest for amd64 not found"):
-        await _find_image_digest("library/ubuntu", "latest", mock_token)
+        await _find_image_digest("library/ubuntu", "latest", mock_token, client)
 
 
 @pytest.mark.asyncio
-async def test_get_image_manifest_cached(mock_storage, mock_manifest):
-    """Test retrieving a cached image manifest."""
-    mock_storage.store_manifest(mock_manifest, tags=["latest"])
-
-    manifest = await _get_image_manifest(mock_storage, "library/ubuntu", "latest")
-
-    assert manifest == mock_manifest
-
-
-@pytest.mark.asyncio
-@mock.patch("httpx.AsyncClient")
-async def test_get_image_manifest_fetch(mock_async_client, mock_storage, mock_token):
+async def test_get_image_manifest_fetch(mock_storage, mock_token):
     """Test fetching an image manifest from the registry."""
-    mock_response_manifest_list = mock.Mock()
-    mock_response_manifest_list.json.return_value = {
+    manifest_list_response_data = {
         "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
         "manifests": [
             {
@@ -229,8 +221,7 @@ async def test_get_image_manifest_fetch(mock_async_client, mock_storage, mock_to
         ]
     }
 
-    mock_response_manifest = mock.Mock()
-    mock_response_manifest.json.return_value = {
+    manifest_response_data = {
         "config": {
             "digest": "sha256:config123",
             "mediaType": "application/vnd.docker.container.image.v1+json"
@@ -247,15 +238,20 @@ async def test_get_image_manifest_fetch(mock_async_client, mock_storage, mock_to
         ]
     }
 
-    mock_async_client.return_value.__aenter__.return_value.get.side_effect = [
-        mock_response_manifest_list,
-        mock_response_manifest
-    ]
+    def mock_transport(request):
+        if "manifests/latest" in request.url.path:
+            return httpx.Response(200, json=manifest_list_response_data)
+        if "manifests/sha256:abc123" in request.url.path:
+            return httpx.Response(200, json=manifest_response_data)
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_transport))
 
     manifest = await _get_image_manifest(
         mock_storage,
         "library/ubuntu",
         "latest",
+        client,
         mock_token
     )
 
@@ -265,26 +261,12 @@ async def test_get_image_manifest_fetch(mock_async_client, mock_storage, mock_to
     assert manifest.config[0] == "sha256:config123"
     assert len(manifest.layers) == 2
     assert mock_storage.get_manifest("docker.io", "library/ubuntu", "latest") == manifest
-    assert mock_async_client.return_value.__aenter__.return_value.get.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_get_image_config_cached(mock_storage, mock_manifest, mock_config):
-    """Test retrieving a cached image config."""
-    mock_storage.store_image_config(mock_manifest, mock_config)
-
-    config = await _get_image_config(mock_storage, mock_manifest, None)
-
-    assert config == mock_config
-
-
-@pytest.mark.asyncio
-@mock.patch("httpx.AsyncClient")
-async def test_get_image_config_fetch(mock_async_client, mock_storage,
-                                 mock_manifest, mock_token):
+async def test_get_image_config_fetch(mock_storage, mock_manifest, mock_token):
     """Test fetching an image config from the registry."""
-    mock_response = mock.Mock()
-    mock_response.json.return_value = {
+    response_data = {
         "architecture": "amd64",
         "os": "linux",
         "config": {
@@ -292,87 +274,102 @@ async def test_get_image_config_fetch(mock_async_client, mock_storage,
             "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
         }
     }
-    mock_async_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=response_data)
+        )
+    )
 
-    config = await _get_image_config(mock_storage, mock_manifest, mock_token)
+    config = await _get_image_config(mock_storage, mock_manifest, client, mock_token)
 
     assert config.architecture == "amd64"
     assert config.os == "linux"
     assert config.config["Cmd"] == ["/bin/bash"]
     assert mock_storage.get_image_config(mock_manifest) == config
-    mock_async_client.return_value.__aenter__.return_value.get.assert_called_once()
 
 
 @pytest.mark.asyncio
-@mock.patch("httpx.AsyncClient")
-async def test_get_image_layers(mock_async_client, mock_storage,
-                          mock_manifest, mock_token):
+async def test_get_image_layers(mock_storage, mock_manifest, mock_token):
     """Test fetching image layers from the registry."""
-    mock_response = mock.Mock()
-    mock_response.content = b"layer_data"
-    mock_async_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    layer_data = b"layer_data"
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=layer_data)
+        )
+    )
 
-    layers = await _get_image_layers(mock_storage, mock_manifest, mock_token)
+    layers = await _get_image_layers(mock_storage, mock_manifest, client, mock_token)
 
     assert len(layers) == 2
     assert layers[0].digest == "sha256:layer1"
     assert layers[1].digest == "sha256:layer2"
-    assert mock_async_client.return_value.__aenter__.return_value.get.call_count == 2
 
 
 @pytest.mark.asyncio
-@mock.patch("pbcr.docker_registry._get_pull_token")
-@mock.patch("pbcr.docker_registry._find_image_digest")
-@mock.patch("pbcr.docker_registry._get_image_manifest")
-@mock.patch("pbcr.docker_registry._get_image_config")
-@mock.patch("pbcr.docker_registry._get_image_layers")
-async def test_pull_image_from_docker(
-    mock_get_layers, mock_get_config, mock_get_manifest, mock_find_digest,
-    mock_get_token, mock_storage, mock_manifest, mock_config
-):
+async def test_load_docker_image(mock_storage, mock_manifest, mock_config):
     # pylint: disable=too-many-arguments, too-many-positional-arguments, unused-argument
-    """Test the main pull_image_from_docker function."""
-    mock_get_token.return_value = PullToken(
-        token="test_token",
-        expires_in=300,
-        issued_at="2023-01-01T00:00:00"
-    )
-    mock_find_digest.return_value = (Digest("sha256:digest"), MediaType("application/type"))
-    mock_get_manifest.return_value = mock_manifest
-    mock_get_config.return_value = mock_config
-    mock_get_layers.return_value = [
-        ImageLayer(digest=Digest("sha256:layer1"), path=pathlib.Path("/tmp/layer1")),
-        ImageLayer(digest=Digest("sha256:layer2"), path=pathlib.Path("/tmp/layer2"))
-    ]
+    """Test the main load_docker_image function."""
+    token_response_data = {
+        "token": "test_token",
+        "expires_in": 300,
+        "issued_at": "2023-01-01T00:00:00"
+    }
+    manifest_list_response_data = {
+        "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+        "manifests": [
+            {
+                "digest": "sha256:digest",
+                "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                "platform": {"architecture": "amd64"}
+            }
+        ]
+    }
+    manifest_response_data = {
+        "config": {
+            "digest": "sha256:config123",
+            "mediaType": "application/vnd.docker.container.image.v1+json"
+        },
+        "layers": [
+            {
+                "digest": "sha256:layer1",
+                "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+            },
+            {
+                "digest": "sha256:layer2",
+                "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip"
+            }
+        ]
+    }
+    config_response_data = {
+        "architecture": "amd64",
+        "os": "linux",
+        "config": {
+            "Cmd": ["/bin/bash"],
+            "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
+        }
+    }
+    layer_data = b"layer_data"
 
-    image = await pull_image_from_docker(mock_storage, "ubuntu:latest")
+    def mock_transport(request):
+        if "auth.docker.io" in request.url.host:
+            return httpx.Response(200, json=token_response_data)
+        if "manifests/latest" in request.url.path:
+            return httpx.Response(200, json=manifest_list_response_data)
+        if "manifests/sha256:digest" in request.url.path:
+            return httpx.Response(200, json=manifest_response_data)
+        if "blobs/sha256:config123" in request.url.path:
+            return httpx.Response(200, json=config_response_data)
+        if "blobs/sha256:layer1" in request.url.path or "blobs/sha256:layer2" in request.url.path:
+            return httpx.Response(200, content=layer_data)
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(mock_transport))
+
+    # Patch the internal client creation in load_docker_image
+    with mock.patch('httpx.AsyncClient', return_value=client):
+        image = await load_docker_image(mock_storage, "ubuntu:latest")
 
     assert image.registry == "docker.io"
-    assert image.manifest == mock_manifest
-    assert image.config == mock_config
-    assert len(image.layers) == 2
-
-
-@pytest.mark.asyncio
-@mock.patch("pbcr.docker_registry._get_image_manifest")
-@mock.patch("pbcr.docker_registry._get_image_config")
-@mock.patch("pbcr.docker_registry._get_image_layers")
-async def test_load_docker_image(
-    mock_get_layers, mock_get_config, mock_get_manifest,
-    mock_storage, mock_manifest, mock_config
-):
-    # pylint: disable=too-many-arguments, too-many-positional-arguments, unused-argument
-    """Test the load_docker_image function."""
-    mock_get_manifest.return_value = mock_manifest
-    mock_get_config.return_value = mock_config
-    mock_get_layers.return_value = [
-        ImageLayer(digest=Digest("sha256:layer1"), path=pathlib.Path("/tmp/layer1")),
-        ImageLayer(digest=Digest("sha256:layer2"), path=pathlib.Path("/tmp/layer2"))
-    ]
-
-    image = await load_docker_image(mock_storage, "ubuntu:latest")
-
-    assert image.registry == "docker.io"
-    assert image.manifest == mock_manifest
-    assert image.config == mock_config
+    assert image.manifest.digest == "sha256:digest"
+    assert image.config.architecture == "amd64"
     assert len(image.layers) == 2

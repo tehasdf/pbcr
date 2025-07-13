@@ -164,6 +164,23 @@ async def _choose_image(storage: ImageStorage, image_name: str) -> Image:
     raise ValueError(f'unknown image reference: {image_name}')
 
 
+def _find_command_to_run(
+    cfg: ContainerConfig,
+    img: Image,
+) -> list[str]:
+    if cfg.entrypoint:
+        entrypoint = cfg.entrypoint
+        to_run = shlex.split(entrypoint + cfg.command)
+    else:
+        entrypoint = img.config.config.get('Entrypoint')
+        command = img.config.config['Cmd']
+        if not entrypoint:
+            entrypoint = [command[0]]
+            command = command[1:]
+        to_run = entrypoint + command
+    return to_run
+
+
 async def run_command(
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
@@ -173,6 +190,7 @@ async def run_command(
     # this has to be fixed later
     # pylint: disable=too-many-locals
     container_name = cfg.container_name or str(uuid.uuid4())
+
     img = await _choose_image(image_storage, cfg.image_name)
 
     uidmapper = _UIDMapper.for_current_user()
@@ -190,16 +208,7 @@ async def run_command(
     )
     container_fs.add_volumes(cfg.volumes)
 
-    if cfg.entrypoint:
-        entrypoint = cfg.entrypoint
-        to_run = shlex.split(entrypoint + cfg.command)
-    else:
-        entrypoint = img.config.config.get('Entrypoint')
-        command = img.config.config['Cmd']
-        if not entrypoint:
-            entrypoint = [command[0]]
-            command = command[1:]
-        to_run = entrypoint + command
+    to_run = _find_command_to_run(cfg, img)
 
     container_uids, container_gids = _get_container_spec_from_image(img.config)
 

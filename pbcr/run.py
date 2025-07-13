@@ -6,10 +6,10 @@ import pwd
 import shlex
 import signal
 import subprocess
-import threading
 import uuid
 
 import typing as t
+import asyncio
 
 from pbcr import libc
 from pbcr.docker_registry import load_docker_image
@@ -147,14 +147,23 @@ def _get_container_spec_from_image(image_config: ImageConfig) -> tuple[list[str]
     return image_config.uids, image_config.gids
 
 
-def _choose_image(storage: ImageStorage, image_name: str) -> Image:
+async def _choose_image(storage: ImageStorage, image_name: str) -> Image:
     if image_name.startswith('docker.io/'):
-        image_name = image_name.replace('docker.io/', '', 1)
-        return load_docker_image(storage, image_name)
+        registry = 'docker.io'
+        repo, _, reference = image_name.replace('docker.io/', '', 1).partition(':')
+        reference = reference or 'latest'
+
+        # Try to get the image from storage first
+        img = storage.get_image(registry, repo, reference)
+        if img:
+            return img
+
+        # If not found in storage, pull it
+        return await load_docker_image(storage, f"{repo}:{reference}")
     raise ValueError(f'unknown image reference: {image_name}')
 
 
-def run_command(
+async def run_command(
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
     cfg: ContainerConfig,
@@ -163,7 +172,7 @@ def run_command(
     # this has to be fixed later
     # pylint: disable=too-many-locals
     container_name = cfg.container_name or str(uuid.uuid4())
-    img = _choose_image(image_storage, cfg.image_name)
+    img = await _choose_image(image_storage, cfg.image_name)
 
     uidmapper = _UIDMapper.for_current_user()
     container = Container(
@@ -217,38 +226,57 @@ def run_command(
                 uidmapper.newuidmap(barrier.other_pid, container_uids)
                 uidmapper.newgidmap(barrier.other_pid, container_gids)
 
-            if barrier.other_pid is not None:
                 net_fd = get_process_net_fd(barrier.other_pid)
+                loop = asyncio.get_event_loop()
+                # Set the file descriptor to non-blocking mode
+                os.set_blocking(net_fd, False)
+
+                tcp_stack_instance = TCPStack(net_fd, loop)
+
+                loop.add_reader(net_fd, _reader_callback, net_fd, tcp_stack_instance)
                 barrier.signal()
-                reader_fd = os.fdopen(net_fd, "r+b", buffering=0)
-                reader_thread = threading.Thread(
-                    target=_reader,
-                    args=(reader_fd,),
-                    daemon=True,
-                )
-                reader_thread.start()
+
             if not cfg.daemon:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
                 retcode = 1
                 if barrier.other_pid is not None:
-                    _, retcode = os.waitpid(barrier.other_pid, 0)
+                    # Use loop.run_in_executor to run the blocking os.waitpid in a separate thread
+                    # This allows the asyncio event loop to continue processing other tasks
+                    _, retcode = await loop.run_in_executor(
+                        None, # Use the default ThreadPoolExecutor
+                        os.waitpid,
+                        barrier.other_pid,
+                        0 # Blocking wait for the child process
+                    )
                 if cfg.remove:
                     container_storage.remove_container(container)
                     container_fs.remove()
+                print('return code:', retcode)
                 return retcode
     raise RuntimeError(
         "This should never happen, the container process did not exit"
     )
 
 
-def _reader(reader_fd):
-    tcp = TCPStack(reader_fd.write)
-    tcp.start()
-    while True:
-        data = bytearray(reader_fd.read(8192))
+# Remove the global tcp_stack_instance variable
+# tcp_stack_instance = None
 
-        iph, data = IPInfo.parse(data)
-        if iph.proto == 6:  # tcp
-            tcph, data = TCPInfo.parse(iph, data)
-            tcp.handle_packet(iph, tcph, data)
+def _reader_callback(net_fd: int, tcp_stack_instance: TCPStack):
+    while True:
+        try:
+            data = bytearray(os.read(net_fd, 8192))
+            if not data: # No more data to read right now
+                break
+
+            iph, data_remaining = IPInfo.parse(data)
+            if iph.ipver != 4:
+                continue
+            if iph.proto == 6:  # tcp
+                tcph, data_remaining = TCPInfo.parse(iph, data_remaining)
+                tcp_stack_instance.handle_packet(iph, tcph, data_remaining)
+            else:
+                print(f"Unhandled IP protocol: {iph.proto}: {data}")
+
+        except BlockingIOError: # No more data immediately available
+            break

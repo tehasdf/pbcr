@@ -4,8 +4,8 @@ This implements the TCP-related networking and proxying.
 """
 import asyncio
 import enum
-import threading
 import typing as t
+import os
 
 from dataclasses import dataclass
 
@@ -156,24 +156,12 @@ class _TCB:
         return (bytes(self.src_ip), self.src_port, bytes(self.dst_ip), self.dst_port)
 
 
-class TCPStack:
+class TCPStack:  # pylint: disable=too-few-public-methods
     """TCP stack implementation"""
-    def __init__(self, writer: t.Callable[[bytearray], None]):
-        self.writer = writer
+    def __init__(self, net_fd: int, loop: asyncio.AbstractEventLoop):
+        self.net_fd = net_fd
         self._tcb = {}
-        self._loop = asyncio.new_event_loop()
-        self.thread = None
-
-    def start(self):
-        """Start the TCP stack"""
-        self.thread = threading.Thread(
-            target=self._run,
-            daemon=True,
-        )
-        self.thread.start()
-
-    def _run(self):
-        self._loop.run_forever()
+        self._loop = loop
 
     def handle_packet(
         self,
@@ -187,7 +175,6 @@ class TCPStack:
                 self._do_handle(iph, tcph, data)
             )
         )
-
 
     def _get_tcb(self, iph: IPInfo, tcph: TCPInfo) -> _TCB | None:
         """Get TCB for this connection, creating if needed"""
@@ -242,7 +229,7 @@ class TCPStack:
 
     def _send_response(self, response: bytearray, tcb: _TCB):
         """Send a response and update sequence number if needed"""
-        self.writer(response)
+        os.write(self.net_fd, response) # Changed from self.writer(response)
         if response[33] & TCPFlags.SYN or response[33] & TCPFlags.FIN:
             tcb.snd_nxt += 1
 

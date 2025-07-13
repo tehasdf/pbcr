@@ -13,15 +13,15 @@ class IPInfo:
     src: bytes
     dst: bytes
     proto: int
+    ipver: int = 4
 
     def build(self, datalen: int) -> bytearray:
         """Build the IP header"""
-        ipver = 4
         ihl = 5
         ident = 1
         total_len = (ihl * 4) + datalen
         iph = bytearray([
-            ipver << 4 | ihl,
+            self.ipver << 4 | ihl,
             0,  # DSCP and ECN
             *int.to_bytes(total_len, 2, "big"),
             ident >> 8,
@@ -45,6 +45,7 @@ class IPInfo:
         if cksum not in (0, 0xffff):
             raise ValueError(f"Invalid checksum: {hex(cksum)}")
         hdr = cls(
+            ipver=(data[0] >> 4) & 0x0F,
             src=bytes(data[12:16]),
             dst=bytes(data[16:20]),
             proto=data[9],

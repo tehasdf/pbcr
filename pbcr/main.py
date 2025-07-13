@@ -3,15 +3,51 @@
 This defines the CLI entrypoint for PBCR
 """
 
+import asyncio
 import argparse
 import pathlib
-import sys
 
 from pbcr.containers import rm_container, list_containers
 from pbcr.images import list_images_command, pull_image_command
 from pbcr.run import run_command
 from pbcr.storage import FileImageStorage, FileContainerStorage
 from pbcr.types import ContainerConfig
+
+
+async def _do_run_command(parser, **kwargs):
+    command = kwargs.pop('command', None)
+    base_path = pathlib.Path('~/.pbcr').expanduser().absolute()
+    image_storage = FileImageStorage.create(base_path)
+    container_storage = FileContainerStorage.create(base_path)
+
+    match command:
+        case "images":
+            list_images_command(image_storage, **kwargs)
+        case "pull":
+            await pull_image_command(image_storage, **kwargs)
+        case "run":
+            image_name = kwargs.pop('image_name')[0]
+            cfg = ContainerConfig(
+                image_name=image_name,
+                **kwargs,
+            )
+            if cfg.daemon and cfg.remove:
+                raise ValueError('Cannot run in daemon mode with remove')
+            await run_command(
+                image_storage,
+                container_storage,
+                cfg,
+            )
+        case "ps":
+            list_containers(container_storage)
+        case "rm":
+            rm_container(
+                container_storage,
+                **kwargs,
+            )
+        case _:
+            parser.print_help()
+    print('Done')
 
 
 def main():
@@ -72,37 +108,4 @@ def main():
     )
 
     kwargs = vars(parser.parse_args())
-
-    command = kwargs.pop('command', None)
-    base_path = pathlib.Path('~/.pbcr').expanduser().absolute()
-    image_storage = FileImageStorage.create(base_path)
-    container_storage = FileContainerStorage.create(base_path)
-
-    match command:
-        case "images":
-            list_images_command(image_storage, **kwargs)
-        case "pull":
-            pull_image_command(image_storage, **kwargs)
-        case "run":
-            image_name = kwargs.pop('image_name')[0]
-            cfg = ContainerConfig(
-                image_name=image_name,
-                **kwargs,
-            )
-            if cfg.daemon and cfg.remove:
-                raise ValueError('Cannot run in daemon mode with remove')
-            exitcode = run_command(
-                image_storage,
-                container_storage,
-                cfg,
-            )
-            sys.exit(exitcode)
-        case "ps":
-            list_containers(container_storage)
-        case "rm":
-            rm_container(
-                container_storage,
-                **kwargs,
-            )
-        case _:
-            parser.print_help()
+    asyncio.run(_do_run_command(parser, **kwargs))

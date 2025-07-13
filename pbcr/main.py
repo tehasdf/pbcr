@@ -7,6 +7,8 @@ import asyncio
 import argparse
 import pathlib
 
+from concurrent.futures import ThreadPoolExecutor
+
 from pbcr.containers import rm_container, list_containers
 from pbcr.images import list_images_command, pull_image_command
 from pbcr.run import run_command
@@ -15,6 +17,9 @@ from pbcr.types import ContainerConfig
 
 
 async def _do_run_command(parser, **kwargs):
+    loop = asyncio.get_event_loop()
+    executor = ThreadPoolExecutor(max_workers=10)
+    loop.set_default_executor(executor)
     command = kwargs.pop('command', None)
     base_path = pathlib.Path('~/.pbcr').expanduser().absolute()
     image_storage = FileImageStorage.create(base_path)
@@ -32,6 +37,7 @@ async def _do_run_command(parser, **kwargs):
                 **kwargs,
             )
             await run_command(
+                loop,
                 image_storage,
                 container_storage,
                 cfg,
@@ -45,6 +51,8 @@ async def _do_run_command(parser, **kwargs):
             )
         case _:
             parser.print_help()
+
+    executor.shutdown(wait=True)
 
 
 def main():

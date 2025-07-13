@@ -4,7 +4,7 @@ import os
 import pathlib
 import pwd
 import shlex
-import signal
+import socket
 import subprocess
 import uuid
 
@@ -24,7 +24,8 @@ from pbcr.types import (
 from pbcr.networking import (
     IPInfo,
     TCPInfo,
-    get_process_net_fd,
+    send_process_net_fd,
+    receive_process_net_fd,
     TCPStack,
 )
 from pbcr.forkbarrier import ForkBarrier
@@ -202,6 +203,7 @@ async def run_command(
 
     container_uids, container_gids = _get_container_spec_from_image(img.config)
 
+    left_sock, right_sock = socket.socketpair()
     with ForkBarrier() as barrier:
         if barrier.is_child:
             libc.unshare(
@@ -210,6 +212,9 @@ async def run_command(
                 libc.CLONE_NEWNS |
                 libc.CLONE_NEWNET,
             )
+            send_process_net_fd(left_sock)
+            left_sock.close()
+
             barrier.signal()
             barrier.wait()
 
@@ -219,6 +224,9 @@ async def run_command(
 
         else:
             barrier.wait()
+            net_fd = receive_process_net_fd(right_sock)
+            right_sock.close()
+
             container.pid = barrier.other_pid
             container_storage.store_container(container)
 

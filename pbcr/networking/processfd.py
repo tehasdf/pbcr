@@ -2,12 +2,11 @@
 
 import array
 import fcntl
+import os
 import socket
 import struct
-import sys
 
 from pbcr import libc
-from pbcr.forkbarrier import ForkBarrier
 
 
 def _setup_network_namespaces(pid: int):
@@ -25,7 +24,7 @@ def _setup_network_namespaces(pid: int):
 
 def _setup_tun_interface():
     """Set up the TUN interface and return its file descriptor."""
-    dev_name = b'tap0'
+    dev_name = b'tun0'
     ifreq = struct.pack(
         f"{libc.IFNAMSIZ}sH",
         dev_name,
@@ -47,12 +46,12 @@ def _configure_loopback_interface():
     fcntl.ioctl(sock_fd, libc.SIOCSIFFLAGS, lo_ifreq)
     lo_sock.close() # Close the socket after use
 
-def _configure_tap_interface():
-    """Configure the TAP interface with IP address and netmask."""
+def _configure_tun_interface():
+    """Configure the TUN interface with IP address and netmask."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock_fd = sock.fileno()
 
-    dev_name = b'tap0'
+    dev_name = b'tun0'
     fcntl.ioctl(
         sock_fd,
         libc.SIOCSIFFLAGS,
@@ -67,14 +66,14 @@ def _configure_tap_interface():
     fcntl.ioctl(
         sock_fd,
         libc.SIOCSIFADDR,
-        struct.pack('16sI14s', b'tap0', socket.AF_INET, ip_bytes)
+        struct.pack('16sI14s', b'tun0', socket.AF_INET, ip_bytes)
     )
     nm_text = '255.255.255.0'
     nm_bytes = socket.inet_aton(nm_text)
     fcntl.ioctl(
         sock_fd,
         libc.SIOCSIFNETMASK,
-        struct.pack('16sI14s', b'tap0', socket.AF_INET, nm_bytes),
+        struct.pack('16sI14s', b'tun0', socket.AF_INET, nm_bytes),
     )
     sock.close() # Close the socket after use
 
@@ -91,7 +90,7 @@ def _send_fd_to_parent(sock: socket.socket, fd):
         ],
     )
 
-def _receive_fd_from_child(sock: socket.socket) -> int:
+def receive_process_net_fd(sock: socket.socket) -> int:
     """Receive a file descriptor from the child process."""
     fds = array.array("i")
     parts = sock.recvmsg(4096, socket.CMSG_LEN(1 * fds.itemsize))
@@ -107,22 +106,12 @@ def _receive_fd_from_child(sock: socket.socket) -> int:
     return fds[0]
 
 
-def get_process_net_fd(pid: int) -> int:
-    """Get the network FD for a process"""
-    left_sock, right_sock = socket.socketpair()
-    with ForkBarrier() as barrier:
-        if barrier.is_child:
-            _setup_network_namespaces(pid)
-            tun_fd = _setup_tun_interface()
-            _configure_loopback_interface()
-            _configure_tap_interface()
+def send_process_net_fd(sock: socket.socket):
+    """Send the network FD for a process to the parent"""
+    pid = os.getpid()
+    _setup_network_namespaces(pid)
+    tun_fd = _setup_tun_interface()
+    _configure_loopback_interface()
+    _configure_tun_interface()
 
-            barrier.signal()
-            _send_fd_to_parent(left_sock, tun_fd)
-            barrier.wait()
-            sys.exit(0)
-
-        barrier.wait()
-        received_fd = _receive_fd_from_child(right_sock)
-        barrier.signal()
-        return received_fd
+    _send_fd_to_parent(sock, tun_fd)

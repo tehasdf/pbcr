@@ -182,10 +182,11 @@ def _find_command_to_run(
 
 
 async def run_command(
+    loop: asyncio.AbstractEventLoop,
     image_storage: ImageStorage,
     container_storage: ContainerStorage,
     cfg: ContainerConfig,
-    ) -> int:
+) -> int:
     """The CLI command that runs a container"""
     # this has to be fixed later
     # pylint: disable=too-many-locals
@@ -243,34 +244,27 @@ async def run_command(
                 uidmapper.newuidmap(barrier.other_pid, container_uids)
                 uidmapper.newgidmap(barrier.other_pid, container_gids)
 
-                net_fd = get_process_net_fd(barrier.other_pid)
-                loop = asyncio.get_event_loop()
                 os.set_blocking(net_fd, False)
-
                 tcp_stack_instance = TCPStack(net_fd, loop)
-
                 loop.add_reader(net_fd, _reader_callback, net_fd, tcp_stack_instance)
+
                 barrier.signal()
 
-            def handle_sigint(signum, frame):
-                if barrier.other_pid is not None:
-                    os.kill(barrier.other_pid, signal.SIGINT)
-                else:
-                    signal.default_int_handler(signum, frame)
-
-            signal.signal(signal.SIGINT, handle_sigint)
             retcode = 1
             if barrier.other_pid is not None:
-                _, retcode = await loop.run_in_executor(
-                    None, # Use the default ThreadPoolExecutor
-                    os.waitpid,
-                    barrier.other_pid,
-                    0 # Blocking wait for the child process
-                )
+                while True:
+                    try:
+                        retcode = os.waitpid(barrier.other_pid, os.WNOHANG)
+                        await asyncio.sleep(0.1)
+                    except ChildProcessError:
+                        break
+
+                os.close(net_fd)
+                loop.remove_reader(net_fd)
             if cfg.remove:
                 container_storage.remove_container(container)
                 container_fs.remove()
-            print('return code:', retcode)
+            # close the executor to clean up threads
             return retcode
 
 
